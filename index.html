@@ -6,9 +6,11 @@
 <title>OpsHQ — Inversiones Para Latinos</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 
-<const firebaseConfig = { apiKey: "AIzaSyD7TugYDoboxkEr86y_N4H0w__Y86KkhK0", authDomain: "opshq-ipl.firebaseapp.com", projectId: "opshq-ipl", storageBucket: "opshq-ipl.firebasestorage.app",  messagingSenderId: "740933152706",
-  appId: "1:740933152706:web:dbb1a1c2b30e87cf8f705b"};>
-     
+<!-- ╔══════════════════════════════════════════════════════╗
+     ║  STEP 1: Replace this with your Firebase config     ║
+     ║  Go to: console.firebase.google.com                 ║
+     ║  Create project → Add web app → copy firebaseConfig ║
+     ╚══════════════════════════════════════════════════════╝ -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
@@ -18,15 +20,15 @@ import { getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc,
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // ══════════════════════════════════════════════
-// PASTE YOUR FIREBASE CONFIG HERE
+// FIREBASE CONFIG — opshq-ipl project
 // ══════════════════════════════════════════════
 const firebaseConfig = {
-  apiKey:            "YOUR_API_KEY",
-  authDomain:        "YOUR_PROJECT.firebaseapp.com",
-  projectId:         "YOUR_PROJECT_ID",
-  storageBucket:     "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId:             "YOUR_APP_ID"
+  apiKey:            "AIzaSyD7TugYDoboxkEr86y_N4H0w__Y86KkhK0",
+  authDomain:        "opshq-ipl.firebaseapp.com",
+  projectId:         "opshq-ipl",
+  storageBucket:     "opshq-ipl.firebasestorage.app",
+  messagingSenderId: "740933152706",
+  appId:             "1:740933152706:web:dbb1a1c2b30e87cf8f705b"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -40,16 +42,17 @@ const db   = getFirestore(app);
 // ══════════════════════════════════════════════
 const TEAM_PROFILES = {
   // email: { name, role, init, color, tc, access }
-  "jazmin@finanzasparamislatinos.com":    { name:"Jazmin",     role:"CEO",                  init:"JZ", color:"#E6F1FB", tc:"#185FA5", access:"ceo"     },
-  "sofia@finanzasparamislatinos.com": { name:"Sofía",  role:"COO",                  init:"SO", color:"#EEEDFE", tc:"#534AB7", access:"coo"     },
-  "ana@inversiones.com":    { name:"Ana",     role:"Coach + Servicio",     init:"AN", color:"#FAECE7", tc:"#993C1D", access:"coach"   },
-  "mario@inversiones.com":  { name:"Mario",   role:"Coach",                init:"MA", color:"#E1F5EE", tc:"#0F6E56", access:"coach"   },
-  "nelly@inversiones.com":  { name:"Nelly",   role:"Servicio al Cliente",  init:"NE", color:"#FEF3E2", tc:"#854F0B", access:"service" },
-  "regina@inversiones.com": { name:"Regina",  role:"Video Editor",         init:"RE", color:"#FBEAF0", tc:"#993556", access:"editor"  },
-  "alli@inversiones.com":   { name:"Alli",    role:"Diseño + Social Media",init:"AL", color:"#EEEDFE", tc:"#534AB7", access:"design"  },
-  "andres@inversiones.com": { name:"Andres",  role:"Closer / Call Setter", init:"AN2",color:"#EAF3DE", tc:"#3B6D11", access:"sales"   },
-  "sam@inversiones.com":    { name:"Sam",     role:"Thumbnail Designer",   init:"SA", color:"#FEF3E2", tc:"#993C1D", access:"design"  },
-  "emilio@inversiones.com": { name:"Emilio",  role:"Skool Daily Copy",     init:"EM", color:"#E6F1FB", tc:"#185FA5", access:"copy"    },
+  // ← UPDATE THESE EMAILS to match exactly what's in Firebase Authentication
+  "jazmin@finanzasparamislatinos.com": { name:"Jaz",     role:"CEO",                  init:"JZ", color:"#E6F1FB", tc:"#185FA5", access:"ceo"     },
+  "sofia@finanzasparamislatinos.com":  { name:"Sophia",  role:"COO",                  init:"SO", color:"#EEEDFE", tc:"#534AB7", access:"coo"     },
+  "ana@finanzasparamislatinos.com":    { name:"Ana",     role:"Coach + Servicio",     init:"AN", color:"#FAECE7", tc:"#993C1D", access:"coach"   },
+  "mario@finanzasparamislatinos.com":  { name:"Mario",   role:"Coach",                init:"MA", color:"#E1F5EE", tc:"#0F6E56", access:"coach"   },
+  "nelly@finanzasparamislatinos.com":  { name:"Nelly",   role:"Servicio al Cliente",  init:"NE", color:"#FEF3E2", tc:"#854F0B", access:"service" },
+  "regina@finanzasparamislatinos.com": { name:"Regina",  role:"Video Editor",         init:"RE", color:"#FBEAF0", tc:"#993556", access:"editor"  },
+  "alli@finanzasparamislatinos.com":   { name:"Alli",    role:"Diseño + Social Media",init:"AL", color:"#EEEDFE", tc:"#534AB7", access:"design"  },
+  "andres@finanzasparamislatinos.com": { name:"Andres",  role:"Closer / Call Setter", init:"AN2",color:"#EAF3DE", tc:"#3B6D11", access:"sales"   },
+  "sam@finanzasparamislatinos.com":    { name:"Sam",     role:"Thumbnail Designer",   init:"SA", color:"#FEF3E2", tc:"#993C1D", access:"design"  },
+  "emilio@finanzasparamislatinos.com": { name:"Emilio",  role:"Skool Daily Copy",     init:"EM", color:"#E6F1FB", tc:"#185FA5", access:"copy"    },
 };
 
 // ACCESS LEVELS
@@ -63,7 +66,7 @@ const TEAM_PROFILES = {
 // copy   → my tasks, content hub (copy), updates, time off
 
 const ADMIN_ACCESS  = ["ceo","coo"];
-const FINANCE_ACCESS = ["ceo","coo"]; // both Jaz and sofía see full financials
+const FINANCE_ACCESS = ["ceo","coo"]; // both Jaz and Sophia see full financials
 
 // ══════════════════════════════════════════════
 // NAV PER ROLE
@@ -163,7 +166,7 @@ const TASK_TEMPLATES = {
   ],
   "Skool Daily Post": [
     "Emilio writes daily copy",
-    "Sofia approves copy",
+    "Sophia approves copy",
     "Post on Skool community",
   ],
   "High-Ticket Onboarding": [
@@ -175,10 +178,10 @@ const TASK_TEMPLATES = {
     "Member admitted to community",
   ],
   "Social Media Carousel": [
-    "Sofia creates content idea",
+    "Sophia creates content idea",
     "Jaz approves",
     "Alli designs carousel in Canva",
-    "sofía reviews design",
+    "Sophia reviews design",
     "Alli posts on Instagram + schedules",
     "Alli replies to comments/DMs",
   ],
@@ -921,7 +924,7 @@ window.saveGoal = async function() {
 };
 
 // ══════════════════════════════════════════════
-// FINANCIALS (Jaz + sofía only)
+// FINANCIALS (Jaz + Sophia only)
 // ══════════════════════════════════════════════
 async function renderFinancials() {
   if (!isFinance()) { setMain(`<div class="page-title">Financials</div><p style="color:var(--text2)">Access restricted.</p>`); return; }
