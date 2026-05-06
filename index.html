@@ -63,7 +63,7 @@ const TEAM_PROFILES = {
 // copy   → my tasks, content hub (copy), updates, time off
 
 const ADMIN_ACCESS  = ["ceo","coo"];
-const FINANCE_ACCESS = ["ceo","coo"]; // both Jaz and Sophia see full financials
+const FINANCE_ACCESS = ["ceo","coo"]; // both Jaz and sofía see full financials
 
 // ══════════════════════════════════════════════
 // NAV PER ROLE
@@ -163,7 +163,7 @@ const TASK_TEMPLATES = {
   ],
   "Skool Daily Post": [
     "Emilio writes daily copy",
-    "Sophia approves copy",
+    "Sofia approves copy",
     "Post on Skool community",
   ],
   "High-Ticket Onboarding": [
@@ -175,10 +175,10 @@ const TASK_TEMPLATES = {
     "Member admitted to community",
   ],
   "Social Media Carousel": [
-    "Sophia creates content idea",
+    "Sofia creates content idea",
     "Jaz approves",
     "Alli designs carousel in Canva",
-    "Sophia reviews design",
+    "sofía reviews design",
     "Alli posts on Instagram + schedules",
     "Alli replies to comments/DMs",
   ],
@@ -921,7 +921,7 @@ window.saveGoal = async function() {
 };
 
 // ══════════════════════════════════════════════
-// FINANCIALS (Jaz + Sophia only)
+// FINANCIALS (Jaz + sofía only)
 // ══════════════════════════════════════════════
 async function renderFinancials() {
   if (!isFinance()) { setMain(`<div class="page-title">Financials</div><p style="color:var(--text2)">Access restricted.</p>`); return; }
