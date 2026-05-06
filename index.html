@@ -3,29 +3,1198 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>OpsHQ</title>
+<title>OpsHQ — Inversiones Para Latinos</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
 
-<!-- ╔══════════════════════════════════════════╗
-     ║  EMAILJS SETUP — paste your 3 values    ║
-     ║  Get them free at emailjs.com            ║
-     ╚══════════════════════════════════════════╝ -->
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
-<script>
-  // 1. Go to emailjs.com → create free account
-  // 2. Add an Email Service (connect your Gmail)
-  // 3. Create an Email Template (use variables below)
-  // 4. Paste your IDs here:
-  const EMAILJS_CONFIG = {
-    publicKey:  "YOUR_PUBLIC_KEY",       // Account → API Keys
-    serviceId:  "YOUR_SERVICE_ID",       // Email Services tab
-    templateId: "YOUR_TEMPLATE_ID",      // Email Templates tab
-  };
-  // Template variables you can use in EmailJS:
-  // {{to_email}} {{to_name}} {{subject}} {{message}} {{task_name}} {{assigned_by}} {{due_date}}
+<const firebaseConfig = {
+  apiKey: "AIzaSyD7TugYDoboxkEr86y_N4H0w__Y86KkhK0",
+  authDomain: "opshq-ipl.firebaseapp.com",
+  projectId: "opshq-ipl",
+  storageBucket: "opshq-ipl.firebasestorage.app",
+  messagingSenderId: "740933152706",
+  appId: "1:740933152706:web:dbb1a1c2b30e87cf8f705b"
+};>
+     
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc,
+  updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp, where }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-  const EMAIL_ENABLED = EMAILJS_CONFIG.publicKey !== "YOUR_PUBLIC_KEY";
-  if (EMAIL_ENABLED) emailjs.init(EMAILJS_CONFIG.publicKey);
+// ══════════════════════════════════════════════
+// PASTE YOUR FIREBASE CONFIG HERE
+// ══════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey:            "YOUR_API_KEY",
+  authDomain:        "YOUR_PROJECT.firebaseapp.com",
+  projectId:         "YOUR_PROJECT_ID",
+  storageBucket:     "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId:             "YOUR_APP_ID"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db   = getFirestore(app);
+
+// ══════════════════════════════════════════════
+// TEAM ROLES & PERMISSIONS
+// Add each member's email here after you create
+// their account in Firebase Authentication
+// ══════════════════════════════════════════════
+const TEAM_PROFILES = {
+  // email: { name, role, init, color, tc, access }
+  "jaz@inversiones.com":    { name:"Jaz",     role:"CEO",                  init:"JZ", color:"#E6F1FB", tc:"#185FA5", access:"ceo"     },
+  "sophia@inversiones.com": { name:"Sophia",  role:"COO",                  init:"SO", color:"#EEEDFE", tc:"#534AB7", access:"coo"     },
+  "ana@inversiones.com":    { name:"Ana",     role:"Coach + Servicio",     init:"AN", color:"#FAECE7", tc:"#993C1D", access:"coach"   },
+  "mario@inversiones.com":  { name:"Mario",   role:"Coach",                init:"MA", color:"#E1F5EE", tc:"#0F6E56", access:"coach"   },
+  "nelly@inversiones.com":  { name:"Nelly",   role:"Servicio al Cliente",  init:"NE", color:"#FEF3E2", tc:"#854F0B", access:"service" },
+  "regina@inversiones.com": { name:"Regina",  role:"Video Editor",         init:"RE", color:"#FBEAF0", tc:"#993556", access:"editor"  },
+  "alli@inversiones.com":   { name:"Alli",    role:"Diseño + Social Media",init:"AL", color:"#EEEDFE", tc:"#534AB7", access:"design"  },
+  "andres@inversiones.com": { name:"Andres",  role:"Closer / Call Setter", init:"AN2",color:"#EAF3DE", tc:"#3B6D11", access:"sales"   },
+  "sam@inversiones.com":    { name:"Sam",     role:"Thumbnail Designer",   init:"SA", color:"#FEF3E2", tc:"#993C1D", access:"design"  },
+  "emilio@inversiones.com": { name:"Emilio",  role:"Skool Daily Copy",     init:"EM", color:"#E6F1FB", tc:"#185FA5", access:"copy"    },
+};
+
+// ACCESS LEVELS
+// ceo    → everything including payroll/revenue
+// coo    → everything including payroll/expenses, NO individual salaries hidden
+// coach  → my tasks, community board, updates, time off
+// service→ my tasks, client board, updates, time off
+// editor → my tasks, content hub (video), updates, time off
+// design → my tasks, content hub (design), updates, time off
+// sales  → my tasks, sales board, GHL link, updates, time off
+// copy   → my tasks, content hub (copy), updates, time off
+
+const ADMIN_ACCESS  = ["ceo","coo"];
+const FINANCE_ACCESS = ["ceo","coo"]; // both Jaz and Sophia see full financials
+
+// ══════════════════════════════════════════════
+// NAV PER ROLE
+// ══════════════════════════════════════════════
+function getNav(access) {
+  const base = [
+    {id:"overview", icon:"🏠", label:"My overview"},
+    {id:"tasks",    icon:"✅", label:"My tasks"},
+    {id:"updates",  icon:"📢", label:"Updates"},
+    {id:"timeoff",  icon:"📅", label:"Time off"},
+    {id:"links",    icon:"🔗", label:"Quick links"},
+  ];
+  const adminExtra = [
+    {id:"allTasks",  icon:"📋", label:"All tasks"},
+    {id:"content",   icon:"🎬", label:"Content hub"},
+    {id:"team",      icon:"👥", label:"Team"},
+    {id:"goals",     icon:"🎯", label:"Goals"},
+    {id:"analytics", icon:"📊", label:"Analytics"},
+    {id:"settings",  icon:"⚙️", label:"Settings"},
+  ];
+  const financeExtra = [
+    {id:"financials", icon:"💳", label:"Financials"},
+  ];
+  const contentRoles = ["ceo","coo","editor","design","copy"];
+  const salesRoles   = ["ceo","coo","sales"];
+
+  let nav = [...base];
+  if (ADMIN_ACCESS.includes(access)) {
+    nav = [
+      {id:"overview",   icon:"🏠", label:"Overview"},
+      {id:"allTasks",   icon:"✅", label:"All tasks"},
+      {id:"content",    icon:"🎬", label:"Content hub"},
+      {id:"team",       icon:"👥", label:"Team"},
+      {id:"timeoff",    icon:"📅", label:"Time off"},
+      {id:"goals",      icon:"🎯", label:"Goals"},
+      {id:"analytics",  icon:"📊", label:"Analytics"},
+      {id:"updates",    icon:"📢", label:"Updates"},
+      {id:"links",      icon:"🔗", label:"Quick links"},
+      {id:"settings",   icon:"⚙️", label:"Settings"},
+    ];
+    if (FINANCE_ACCESS.includes(access)) {
+      nav.splice(7, 0, {id:"financials", icon:"💳", label:"Financials"});
+    }
+  } else {
+    if (contentRoles.includes(access)) nav.splice(2,0,{id:"content",icon:"🎬",label:"Content hub"});
+    if (salesRoles.includes(access))   nav.splice(2,0,{id:"sales",  icon:"📈",label:"Sales board"});
+  }
+  return nav;
+}
+
+// ══════════════════════════════════════════════
+// QUICK LINKS (editable from Settings)
+// ══════════════════════════════════════════════
+const DEFAULT_LINKS = [
+  {id:"ghl",      icon:"🔗", name:"GHL CRM",       desc:"Go High Level",   url:"https://app.gohighlevel.com",    roles:["all"]},
+  {id:"cal",      icon:"📅", name:"Calendar",       desc:"Google Cal",      url:"https://calendar.google.com",    roles:["all"]},
+  {id:"canva",    icon:"🎨", name:"Canva Design",   desc:"Shared Drive",    url:"https://drive.google.com",       roles:["all"]},
+  {id:"ops",      icon:"⚙️", name:"Operations",     desc:"Shared Drive",    url:"https://drive.google.com",       roles:["ceo","coo"]},
+  {id:"sales-d",  icon:"💰", name:"Sales Process",  desc:"Shared Drive",    url:"https://drive.google.com",       roles:["ceo","coo","sales"]},
+  {id:"skool",    icon:"🎓", name:"Skool Team",     desc:"Shared Drive",    url:"https://drive.google.com",       roles:["ceo","coo","coach","service","copy"]},
+  {id:"service",  icon:"🤝", name:"Servicio Cliente",desc:"Shared Drive",   url:"https://drive.google.com",       roles:["ceo","coo","coach","service"]},
+  {id:"social",   icon:"📱", name:"Social Media",   desc:"Shared Drive",    url:"https://drive.google.com",       roles:["ceo","coo","design"]},
+  {id:"strategy", icon:"🧠", name:"Strategy",       desc:"Shared Drive",    url:"https://drive.google.com",       roles:["ceo","coo"]},
+  {id:"youtube",  icon:"▶️", name:"YouTube Team",   desc:"Shared Drive",    url:"https://drive.google.com",       roles:["ceo","coo","editor","design"]},
+];
+
+// CONTENT PIPELINE STAGES (mirrors your Notion board)
+const CONTENT_STAGES = [
+  "Bank of Ideas",
+  "Idea Approved by Jaz",
+  "Ideas Not Approved",
+  "Create Canva Description",
+  "Approved Scripts",
+  "Design Ready",
+  "Recording",
+  "Upload to Skool",
+  "Upload to YouTube",
+  "Done",
+];
+
+const CONTENT_TYPES = ["Youtube Inspired","Community Question","Mini Course","Short Form","Long Form","Carousel","Other"];
+const TASK_TEMPLATES = {
+  "YouTube Video": [
+    "Bank of Ideas — add concept",
+    "Jaz approves idea",
+    "Write script (short-form or long-form)",
+    "Script approved by Jaz",
+    "Alli creates Canva description/thumbnail brief",
+    "Sam designs thumbnail",
+    "Jaz records video",
+    "Regina edits long-form",
+    "Regina clips short-form for Reels/TikTok",
+    "Upload video to YouTube",
+    "Write description & title",
+    "Upload to Skool",
+    "Post Reels/TikToks",
+  ],
+  "Skool Daily Post": [
+    "Emilio writes daily copy",
+    "Sophia approves copy",
+    "Post on Skool community",
+  ],
+  "High-Ticket Onboarding": [
+    "Andres closes sale / contract sent",
+    "Welcome email sent",
+    "Nelly schedules 20-min broker session",
+    "Nelly holds broker session",
+    "Ana assigns to HT group",
+    "Member admitted to community",
+  ],
+  "Social Media Carousel": [
+    "Sophia creates content idea",
+    "Jaz approves",
+    "Alli designs carousel in Canva",
+    "Sophia reviews design",
+    "Alli posts on Instagram + schedules",
+    "Alli replies to comments/DMs",
+  ],
+};
+
+// ══════════════════════════════════════════════
+// APP STATE
+// ══════════════════════════════════════════════
+let currentUser   = null;
+let currentProfile = null;
+let currentView   = "overview";
+let links         = [...DEFAULT_LINKS];
+let taskFilter    = "all";
+let expandedTasks = new Set();
+let unsubs        = []; // firestore listeners to clean up
+
+// ══════════════════════════════════════════════
+// AUTH
+// ══════════════════════════════════════════════
+onAuthStateChanged(auth, async user => {
+  if (user) {
+    const profile = TEAM_PROFILES[user.email];
+    if (!profile) { await signOut(auth); showLogin("Email not recognized."); return; }
+    currentUser    = user;
+    currentProfile = { ...profile, email: user.email, uid: user.uid };
+    showApp();
+  } else {
+    currentUser    = null;
+    currentProfile = null;
+    showLogin();
+  }
+});
+
+function showLogin(errMsg = "") {
+  document.getElementById("login").style.display = "flex";
+  document.getElementById("app").style.display   = "none";
+  document.getElementById("login-err").textContent = errMsg;
+}
+
+async function doLogin() {
+  const email = document.getElementById("l-email").value.trim();
+  const pass  = document.getElementById("l-pass").value;
+  document.getElementById("login-err").textContent = "";
+  document.getElementById("login-btn").textContent = "Signing in...";
+  try {
+    await signInWithEmailAndPassword(auth, email, pass);
+  } catch(e) {
+    document.getElementById("login-err").textContent = "Wrong email or password.";
+    document.getElementById("login-btn").textContent = "Sign in";
+  }
+}
+
+async function doLogout() {
+  unsubs.forEach(u => u());
+  unsubs = [];
+  await signOut(auth);
+}
+
+// ══════════════════════════════════════════════
+// APP SHELL
+// ══════════════════════════════════════════════
+function showApp() {
+  document.getElementById("login").style.display = "none";
+  document.getElementById("app").style.display   = "flex";
+  document.getElementById("sidebar-name").textContent = currentProfile.name;
+  document.getElementById("sidebar-role").textContent = currentProfile.role;
+  buildNav();
+  go("overview");
+}
+
+function buildNav() {
+  const nav = getNav(currentProfile.access);
+  document.getElementById("nav-list").innerHTML = nav.map(n =>
+    `<button class="nav-item" id="nav-${n.id}" onclick="go('${n.id}')">
+      <span class="nav-icon">${n.icon}</span>${n.label}
+    </button>`).join("");
+}
+
+function setActiveNav(id) {
+  document.querySelectorAll(".nav-item").forEach(el => el.classList.remove("active"));
+  const el = document.getElementById("nav-" + id);
+  if (el) el.classList.add("active");
+}
+
+window.go = function(view) {
+  currentView = view;
+  setActiveNav(view);
+  const m = document.getElementById("main");
+  m.innerHTML = `<div style="padding:2rem;color:var(--text2);font-size:13px">Loading...</div>`;
+  const views = {
+    overview:   renderOverview,
+    allTasks:   renderAllTasks,
+    tasks:      renderMyTasks,
+    content:    renderContentHub,
+    team:       renderTeam,
+    timeoff:    renderTimeOff,
+    goals:      renderGoals,
+    financials: renderFinancials,
+    analytics:  renderAnalytics,
+    updates:    renderUpdates,
+    links:      renderLinks,
+    sales:      renderSalesBoard,
+    settings:   renderSettings,
+  };
+  if (views[view]) views[view]();
+  else m.innerHTML = `<div class="page-title">${view}</div><p style="color:var(--text2)">Coming soon</p>`;
+};
+
+// ══════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════
+const isAdmin    = () => ADMIN_ACCESS.includes(currentProfile?.access);
+const isFinance  = () => FINANCE_ACCESS.includes(currentProfile?.access);
+const profileOf  = email => Object.values(TEAM_PROFILES).find(p => p.name === email) || {color:"var(--bg2)",tc:"var(--text2)",init:"?"};
+const initials   = name  => name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+function avatar(name, size=26) {
+  const p = profileOf(name); const fs = Math.round(size*0.38);
+  return `<div class="avatar" style="width:${size}px;height:${size}px;font-size:${fs}px;background:${p.color};color:${p.tc}">${initials(name)}</div>`;
+}
+function badge(cls, label) { return `<span class="badge ${cls}">${label}</span>`; }
+function empty(msg)        { return `<div class="empty">${msg}</div>`; }
+function fmtDate(d)        { if(!d) return "TBD"; return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}); }
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg; el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 2800);
+}
+function setMain(html) { document.getElementById("main").innerHTML = html; }
+
+// ══════════════════════════════════════════════
+// OVERVIEW
+// ══════════════════════════════════════════════
+async function renderOverview() {
+  if (isAdmin()) await renderAdminOverview();
+  else await renderMemberOverview();
+}
+
+async function renderAdminOverview() {
+  const [tasksSnap, offSnap, annSnap] = await Promise.all([
+    getDocs(collection(db,"tasks")),
+    getDocs(query(collection(db,"timeoff"), where("status","==","pending"))),
+    getDocs(query(collection(db,"announcements"), orderBy("createdAt","desc"))),
+  ]);
+  const tasks   = tasksSnap.docs.map(d=>({id:d.id,...d.data()}));
+  const pending = offSnap.size;
+  const open    = tasks.filter(t=>!t.done).length;
+  const ann     = annSnap.docs.slice(0,2).map(d=>d.data());
+  setMain(`
+  <div class="page-title">Overview</div>
+  <div class="metrics">
+    <div class="metric"><div class="ml">Open tasks</div><div class="mv">${open}</div><div class="ms">team-wide</div></div>
+    <div class="metric"><div class="ml">Team members</div><div class="mv">${Object.keys(TEAM_PROFILES).length}</div></div>
+    <div class="metric"><div class="ml">Time-off pending</div><div class="mv" style="color:var(--amber)">${pending}</div></div>
+    <div class="metric"><div class="ml">High priority</div><div class="mv" style="color:var(--red)">${tasks.filter(t=>t.pri==="high"&&!t.done).length}</div></div>
+  </div>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-head"><div class="card-title">High priority tasks</div>
+        <button class="btn primary" onclick="openTaskModal()">+ Task</button></div>
+      ${tasks.filter(t=>t.pri==="high"&&!t.done).slice(0,5).map(t=>`
+        <div class="task-row-simple">
+          ${avatar(t.assignee,24)}
+          <div class="task-body"><div class="task-name">${t.text}</div>
+          <div class="task-sub">${t.assignee} · due ${fmtDate(t.due)}</div></div>
+          ${badge("high","high")}
+        </div>`).join("")||empty("No high priority tasks 🎉")}
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">Latest updates</div></div>
+      ${ann.map(a=>`<div class="announce"><div class="announce-title">${a.text}</div>
+        <div class="announce-meta">Posted by ${a.by} · ${a.createdAt?.toDate?.()?.toLocaleDateString()||"recently"}</div>
+      </div>`).join("")||empty("No updates yet")}
+      <div class="add-row" style="margin-top:10px">
+        <input type="text" id="quick-ann" placeholder="Post a quick update..." />
+        <button class="btn primary" onclick="quickPost()">Post</button>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">Content pipeline — in progress</div>
+      <button class="btn" onclick="go('content')">Open hub →</button></div>
+    <div id="pipeline-preview">Loading...</div>
+  </div>`);
+  // Load pipeline preview
+  const cpSnap = await getDocs(query(collection(db,"content"), where("stage","in",["Recording","Design Ready","Approved Scripts"])));
+  const items = cpSnap.docs.map(d=>({id:d.id,...d.data()}));
+  document.getElementById("pipeline-preview").innerHTML = items.length
+    ? items.map(c=>`<div class="task-row-simple">
+        <span style="font-size:18px">🎬</span>
+        <div class="task-body"><div class="task-name">${c.title}</div>
+          <div class="task-sub">${c.stage} · ${c.type||""}</div></div>
+        ${badge("info",c.stage)}
+      </div>`).join("")
+    : empty("No items in active stages");
+}
+
+async function renderMemberOverview() {
+  const snap = await getDocs(query(collection(db,"tasks"), where("assignee","==",currentProfile.name)));
+  const mine = snap.docs.map(d=>({id:d.id,...d.data()})).filter(t=>!t.done);
+  const annSnap = await getDocs(query(collection(db,"announcements"), orderBy("createdAt","desc")));
+  const ann = annSnap.docs.slice(0,3).map(d=>d.data());
+  setMain(`
+  <div class="page-title">Hi, ${currentProfile.name.split(" ")[0]} 👋</div>
+  <div class="metrics two">
+    <div class="metric"><div class="ml">My open tasks</div><div class="mv">${mine.length}</div></div>
+    <div class="metric"><div class="ml">High priority</div><div class="mv" style="color:var(--red)">${mine.filter(t=>t.pri==="high").length}</div></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">My tasks</div></div>
+    ${mine.length ? mine.slice(0,6).map(t=>`
+      <div class="task-row-simple">
+        <div class="task-body"><div class="task-name">${t.text}</div>
+          <div class="task-sub">Due ${fmtDate(t.due)}</div></div>
+        ${badge(t.pri,t.pri)}
+      </div>`).join("") : empty("All caught up! 🎉")}
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">Team updates</div></div>
+    ${ann.map(a=>`<div class="announce"><div class="announce-title">${a.text}</div>
+      <div class="announce-meta">Posted by ${a.by} · ${a.createdAt?.toDate?.()?.toLocaleDateString()||"recently"}</div>
+    </div>`).join("")||empty("No updates yet")}
+  </div>`);
+}
+
+async function quickPost() {
+  const inp = document.getElementById("quick-ann");
+  if (!inp?.value.trim()) return;
+  await addDoc(collection(db,"announcements"),{text:inp.value.trim(),by:currentProfile.name,createdAt:serverTimestamp()});
+  toast("Update posted ✓"); go("overview");
+}
+
+// ══════════════════════════════════════════════
+// TASKS
+// ══════════════════════════════════════════════
+let taskModalMode = "new";
+let editTaskId    = null;
+
+window.openTaskModal = function(taskId=null) {
+  taskModalMode = taskId ? "edit" : "new";
+  editTaskId    = taskId;
+  document.getElementById("tm-title").textContent = taskId ? "Edit task" : "New task";
+  document.getElementById("tm-name").value  = "";
+  document.getElementById("tm-notes").value = "";
+  document.getElementById("tm-due").value   = "";
+  document.getElementById("tm-recur").value = "none";
+  document.getElementById("tm-pri").value   = "med";
+  document.getElementById("tm-who").innerHTML = Object.values(TEAM_PROFILES).map(p=>
+    `<option value="${p.name}">${p.name} — ${p.role}</option>`).join("");
+  if (taskId) {
+    getDoc(doc(db,"tasks",taskId)).then(d => {
+      const t = d.data();
+      document.getElementById("tm-name").value  = t.text||"";
+      document.getElementById("tm-notes").value = t.notes||"";
+      document.getElementById("tm-due").value   = t.due||"";
+      document.getElementById("tm-recur").value = t.recur||"none";
+      document.getElementById("tm-pri").value   = t.pri||"med";
+      document.getElementById("tm-who").value   = t.assignee||"";
+    });
+  }
+  document.getElementById("task-modal").style.display = "flex";
+};
+
+window.closeTaskModal = function() {
+  document.getElementById("task-modal").style.display = "none";
+};
+
+window.saveTask = async function() {
+  const text     = document.getElementById("tm-name").value.trim(); if(!text) return;
+  const assignee = document.getElementById("tm-who").value;
+  const pri      = document.getElementById("tm-pri").value;
+  const due      = document.getElementById("tm-due").value;
+  const recur    = document.getElementById("tm-recur").value;
+  const notes    = document.getElementById("tm-notes").value.trim();
+  const data = { text, assignee, pri, due, recur, notes, done:false,
+    updatedAt: serverTimestamp(),
+    updatedBy: currentProfile.name };
+  if (taskModalMode === "edit" && editTaskId) {
+    await updateDoc(doc(db,"tasks",editTaskId), data);
+    toast("Task updated ✓");
+  } else {
+    data.createdAt  = serverTimestamp();
+    data.createdBy  = currentProfile.name;
+    data.subtasks   = [];
+    data.completedDates = [];
+    await addDoc(collection(db,"tasks"), data);
+    toast("Task created ✓");
+  }
+  closeTaskModal();
+  go(currentView);
+};
+
+window.openTemplateModal = function() {
+  document.getElementById("template-modal").style.display = "flex";
+  document.getElementById("tmpl-list").innerHTML = Object.keys(TASK_TEMPLATES).map(k=>
+    `<div class="tmpl-item" onclick="applyTemplate('${k}')">
+      <div style="font-size:13px;font-weight:500">${k}</div>
+      <div style="font-size:11px;color:var(--text2)">${TASK_TEMPLATES[k].length} steps</div>
+    </div>`).join("");
+};
+
+window.closeTemplateModal = function() {
+  document.getElementById("template-modal").style.display = "none";
+};
+
+window.applyTemplate = async function(name) {
+  const steps = TASK_TEMPLATES[name];
+  const assignee = document.getElementById("tm-who")?.value || currentProfile.name;
+  for (const step of steps) {
+    await addDoc(collection(db,"tasks"), {
+      text: step, assignee, pri:"med", due:"", recur:"none", notes:"",
+      done:false, subtasks:[], completedDates:[],
+      templateName: name, createdAt: serverTimestamp(), createdBy: currentProfile.name,
+    });
+  }
+  closeTemplateModal(); closeTaskModal();
+  toast(`${steps.length} tasks created from "${name}" template ✓`);
+  go(currentView);
+};
+
+async function renderAllTasks() {
+  const snap = await getDocs(query(collection(db,"tasks"), orderBy("createdAt","desc")));
+  const tasks = snap.docs.map(d=>({id:d.id,...d.data()}));
+  let list = tasks;
+  if (taskFilter==="open")    list = tasks.filter(t=>!t.done);
+  if (taskFilter==="high")    list = tasks.filter(t=>t.pri==="high"&&!t.done);
+  if (taskFilter==="done")    list = tasks.filter(t=>t.done);
+  if (taskFilter==="recur")   list = tasks.filter(t=>t.recur&&t.recur!=="none");
+
+  setMain(`
+  <div class="page-title">All tasks</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+    <div class="filter-row" style="margin:0">
+      ${["all","open","high","done","recur"].map(f=>`
+        <button class="filter-btn ${taskFilter===f?"active":""}" onclick="setTaskFilter('${f}',this)">${f==="recur"?"↻ Recurring":f.charAt(0).toUpperCase()+f.slice(1)}</button>`).join("")}
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" onclick="openTemplateModal()">📋 Use template</button>
+      <button class="btn primary" onclick="openTaskModal()">+ New task</button>
+    </div>
+  </div>
+  <div class="card">
+    ${list.length ? list.map(t=>taskRowHTML(t,true)).join("") : empty("No tasks here")}
+  </div>`);
+}
+
+async function renderMyTasks() {
+  const snap = await getDocs(query(collection(db,"tasks"), where("assignee","==",currentProfile.name), orderBy("createdAt","desc")));
+  const tasks = snap.docs.map(d=>({id:d.id,...d.data()}));
+  setMain(`
+  <div class="page-title">My tasks</div>
+  <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+    <button class="btn primary" onclick="openTaskModal()">+ Add task</button>
+  </div>
+  <div class="card">
+    ${tasks.length ? tasks.map(t=>taskRowHTML(t,false)).join("") : empty("No tasks assigned yet 🎉")}
+  </div>`);
+}
+
+function taskRowHTML(t, showAssignee=true) {
+  return `
+  <div class="task-item" id="ti-${t.id}">
+    <div class="task-row-inner">
+      <input type="checkbox" class="task-cb" ${t.done?"checked":""} onchange="toggleTask('${t.id}','${t.recur||"none"}')">
+      <div class="task-body">
+        <div class="task-name ${t.done?"done":""}">${t.text}</div>
+        <div class="task-sub">
+          ${showAssignee?`<span>${t.assignee}</span>`:""}
+          ${t.due?`<span>Due ${fmtDate(t.due)}</span>`:""}
+          ${t.recur&&t.recur!=="none"?`<span class="recur-tag">↻ ${t.recur}</span>`:""}
+          ${t.templateName?`<span class="tmpl-tag">${t.templateName}</span>`:""}
+        </div>
+      </div>
+      ${badge(t.done?"done-b":t.pri, t.done?"done":t.pri)}
+      ${showAssignee?avatar(t.assignee,24):""}
+      <div class="task-actions">
+        <button class="icon-btn" onclick="editTask('${t.id}')">✏️</button>
+        <button class="icon-btn" onclick="deleteTask('${t.id}')">🗑</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+window.toggleTask = async function(id, recur) {
+  const ref  = doc(db,"tasks",id);
+  const snap = await getDoc(ref);
+  const t    = snap.data();
+  const now  = new Date().toISOString().split("T")[0];
+  const newDone = !t.done;
+  const dates = t.completedDates||[];
+  if (newDone) dates.push(now);
+  await updateDoc(ref,{done:newDone, completedDates:dates, updatedAt:serverTimestamp()});
+  if (newDone && recur && recur!=="none") {
+    const base = new Date(t.due||now);
+    if(recur==="daily")   base.setDate(base.getDate()+1);
+    if(recur==="weekly")  base.setDate(base.getDate()+7);
+    if(recur==="monthly") base.setMonth(base.getMonth()+1);
+    const newDue = base.toISOString().split("T")[0];
+    await addDoc(collection(db,"tasks"),{...t, done:false, due:newDue,
+      completedDates:[], createdAt:serverTimestamp(), createdBy:"system"});
+    toast(`↻ Recurring task created for ${fmtDate(newDue)}`);
+  } else toast(newDone ? "Task done ✓" : "Task reopened");
+  go(currentView);
+};
+
+window.editTask   = id => openTaskModal(id);
+window.deleteTask = async function(id) {
+  if (!confirm("Delete this task?")) return;
+  await deleteDoc(doc(db,"tasks",id));
+  toast("Deleted"); go(currentView);
+};
+window.setTaskFilter = function(f,btn) {
+  taskFilter = f;
+  document.querySelectorAll(".filter-btn").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+  go("allTasks");
+};
+
+// ══════════════════════════════════════════════
+// CONTENT HUB (replaces Notion board)
+// ══════════════════════════════════════════════
+async function renderContentHub() {
+  setMain(`
+  <div class="page-title">Content hub</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${CONTENT_TYPES.map(t=>`<button class="filter-btn" onclick="filterContent('${t}',this)">${t}</button>`).join("")}
+      <button class="filter-btn active" onclick="filterContent('all',this)">All</button>
+    </div>
+    ${isAdmin()?`
+    <div style="display:flex;gap:8px">
+      <button class="btn" onclick="openScriptAI()">🤖 AI Script</button>
+      <button class="btn primary" onclick="openContentModal()">+ New idea</button>
+    </div>`:""}
+  </div>
+  <div class="board-cols" id="content-board">
+    ${CONTENT_STAGES.map((s,i)=>`
+      <div class="board-col">
+        <div class="board-col-title">${s}<span class="board-count" id="count-${i}">0</span></div>
+        <div id="stage-${i}" class="stage-cards">
+          <div style="font-size:11px;color:var(--text3);padding:4px">Loading...</div>
+        </div>
+        ${isAdmin()?`<button class="add-card-btn" onclick="openContentModal('${s}')">+ Add</button>`:""}
+      </div>`).join("")}
+  </div>`);
+  await loadContentBoard("all");
+}
+
+async function loadContentBoard(typeFilter="all") {
+  const snap = await getDocs(query(collection(db,"content"), orderBy("createdAt","desc")));
+  const items = snap.docs.map(d=>({id:d.id,...d.data()}));
+  CONTENT_STAGES.forEach((stage,i) => {
+    let stageItems = items.filter(c=>c.stage===stage);
+    if (typeFilter!=="all") stageItems = stageItems.filter(c=>c.type===typeFilter);
+    document.getElementById(`count-${i}`).textContent = stageItems.length;
+    document.getElementById(`stage-${i}`).innerHTML = stageItems.length
+      ? stageItems.map(c=>contentCardHTML(c)).join("")
+      : `<div style="font-size:11px;color:var(--text3);padding:4px">Empty</div>`;
+  });
+}
+
+window.filterContent = async function(type,btn) {
+  document.querySelectorAll(".filter-btn").forEach(b=>b.classList.remove("active"));
+  btn.classList.add("active");
+  await loadContentBoard(type==="all"?"all":type);
+};
+
+function contentCardHTML(c) {
+  const typeColors = {
+    "Youtube Inspired":"tag-content","Community Question":"tag-link",
+    "Mini Course":"tag-sop","Short Form":"tag-idea",
+    "Long Form":"tag-content","Carousel":"tag-idea","Other":"tag-link"
+  };
+  return `
+  <div class="board-card" onclick="openContentDetail('${c.id}')">
+    <div class="board-card-title">${c.title}</div>
+    ${c.assignee?`<div style="font-size:10px;color:var(--text2);margin:4px 0">${c.assignee}</div>`:""}
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
+      ${c.type?`<span class="board-tag ${typeColors[c.type]||"tag-link"}">${c.type}</span>`:""}
+      ${c.scriptApproved?`<span class="board-tag tag-sop">Script ✓</span>`:""}
+      ${c.canvaReady?`<span class="board-tag tag-content">Canva ✓</span>`:""}
+      ${c.uploaded?`<span class="board-tag tag-sop">Uploaded ✓</span>`:""}
+    </div>
+  </div>`;
+}
+
+let contentModalStage = "Bank of Ideas";
+window.openContentModal = function(stage="Bank of Ideas") {
+  contentModalStage = stage;
+  document.getElementById("cm-stage").value  = stage;
+  document.getElementById("cm-title").value  = "";
+  document.getElementById("cm-type").value   = "Youtube Inspired";
+  document.getElementById("cm-notes").value  = "";
+  document.getElementById("cm-assignee").value = currentProfile.name;
+  document.getElementById("content-modal").style.display = "flex";
+};
+window.closeContentModal = function() {
+  document.getElementById("content-modal").style.display = "none";
+};
+window.saveContent = async function() {
+  const title = document.getElementById("cm-title").value.trim(); if(!title) return;
+  await addDoc(collection(db,"content"),{
+    title,
+    stage:    document.getElementById("cm-stage").value,
+    type:     document.getElementById("cm-type").value,
+    notes:    document.getElementById("cm-notes").value.trim(),
+    assignee: document.getElementById("cm-assignee").value,
+    scriptApproved: false, canvaReady: false, uploaded: false,
+    createdAt: serverTimestamp(), createdBy: currentProfile.name,
+  });
+  toast("Content idea added ✓"); closeContentModal(); renderContentHub();
+};
+
+window.openContentDetail = async function(id) {
+  const snap = await getDoc(doc(db,"content",id));
+  const c = snap.data();
+  const stageOptions = CONTENT_STAGES.map(s=>`<option value="${s}" ${c.stage===s?"selected":""}>${s}</option>`).join("");
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.id = "detail-modal";
+  modal.innerHTML = `<div class="modal" style="width:520px" onclick="event.stopPropagation()">
+    <h3 style="margin-bottom:1rem">${c.title}</h3>
+    <div class="modal-row"><label>Stage</label><select id="cd-stage">${stageOptions}</select></div>
+    <div class="modal-row"><label>Type</label><select id="cd-type">${CONTENT_TYPES.map(t=>`<option ${c.type===t?"selected":""}>${t}</option>`).join("")}</select></div>
+    <div class="modal-row"><label>Assignee</label><select id="cd-assignee">${Object.values(TEAM_PROFILES).map(p=>`<option value="${p.name}" ${c.assignee===p.name?"selected":""}>${p.name}</option>`).join("")}</select></div>
+    <div class="modal-row"><label>Notes / Script link</label><textarea id="cd-notes" style="min-height:80px">${c.notes||""}</textarea></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" id="cd-script" ${c.scriptApproved?"checked":""}> Script approved</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" id="cd-canva" ${c.canvaReady?"checked":""}> Canva ready</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px"><input type="checkbox" id="cd-uploaded" ${c.uploaded?"checked":""}> Uploaded</label>
+    </div>
+    <div class="modal-btns">
+      ${isAdmin()?`<button class="btn danger" onclick="deleteContent('${id}')">Delete</button>`:""}
+      <button class="btn" onclick="document.getElementById('detail-modal').remove()">Cancel</button>
+      <button class="btn primary" onclick="updateContent('${id}')">Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+};
+
+window.updateContent = async function(id) {
+  await updateDoc(doc(db,"content",id),{
+    stage:          document.getElementById("cd-stage").value,
+    type:           document.getElementById("cd-type").value,
+    assignee:       document.getElementById("cd-assignee").value,
+    notes:          document.getElementById("cd-notes").value,
+    scriptApproved: document.getElementById("cd-script").checked,
+    canvaReady:     document.getElementById("cd-canva").checked,
+    uploaded:       document.getElementById("cd-uploaded").checked,
+    updatedAt:      serverTimestamp(),
+  });
+  document.getElementById("detail-modal")?.remove();
+  toast("Updated ✓"); renderContentHub();
+};
+
+window.deleteContent = async function(id) {
+  if (!confirm("Delete this content item?")) return;
+  await deleteDoc(doc(db,"content",id));
+  document.getElementById("detail-modal")?.remove();
+  toast("Deleted"); renderContentHub();
+};
+
+// AI Script modal
+window.openScriptAI = function() {
+  document.getElementById("ai-modal").style.display = "flex";
+  document.getElementById("ai-topic").value = "";
+  document.getElementById("ai-type").value  = "short";
+  document.getElementById("ai-result").textContent = "";
+};
+window.closeAIModal = function() { document.getElementById("ai-modal").style.display="none"; };
+window.generateScript = async function() {
+  const topic = document.getElementById("ai-topic").value.trim(); if(!topic) return;
+  const type  = document.getElementById("ai-type").value;
+  document.getElementById("ai-result").textContent = "Generating...";
+  const prompt = type==="short"
+    ? `Using Jaz Bautista's short-form script style (60-90 sec Reels/TikTok, Spanish, Hook→Value→Payoff→CTA for Latino immigrants learning investing), write a script about: ${topic}`
+    : `Write a YouTube long-form video script in Jaz Bautista's style for Latino immigrants learning investing. Topic: ${topic}. Include intro hook, main sections, and CTA.`;
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,messages:[{role:"user",content:prompt}]})
+    });
+    const data = await res.json();
+    document.getElementById("ai-result").textContent = data.content?.[0]?.text||"Error generating script.";
+  } catch(e) {
+    document.getElementById("ai-result").textContent = "Error: "+e.message;
+  }
+};
+
+// ══════════════════════════════════════════════
+// TEAM
+// ══════════════════════════════════════════════
+async function renderTeam() {
+  const snap = await getDocs(collection(db,"tasks"));
+  const tasks = snap.docs.map(d=>d.data());
+  const members = Object.entries(TEAM_PROFILES);
+  setMain(`
+  <div class="page-title">Team (${members.length})</div>
+  <div class="card">
+    ${members.map(([email,p])=>{
+      const open = tasks.filter(t=>t.assignee===p.name&&!t.done).length;
+      const done = tasks.filter(t=>t.assignee===p.name&&t.done).length;
+      return `<div class="team-row">
+        <div class="avatar" style="width:34px;height:34px;font-size:12px;background:${p.color};color:${p.tc}">${p.init}</div>
+        <div style="flex:1"><div style="font-size:13px;font-weight:500">${p.name}</div>
+          <div style="font-size:11px;color:var(--text2)">${p.role}</div></div>
+        <span class="badge info">${p.access}</span>
+        <span style="font-size:12px;color:var(--text2)">${open} open · ${done} done</span>
+      </div>`;}).join("")}
+  </div>`);
+}
+
+// ══════════════════════════════════════════════
+// TIME OFF
+// ══════════════════════════════════════════════
+async function renderTimeOff() {
+  if (isAdmin()) await renderAdminTimeOff();
+  else await renderMemberTimeOff();
+}
+
+async function renderAdminTimeOff() {
+  const snap = await getDocs(query(collection(db,"timeoff"), orderBy("createdAt","desc")));
+  const reqs = snap.docs.map(d=>({id:d.id,...d.data()}));
+  setMain(`
+  <div class="page-title">Time off</div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">All requests</div></div>
+    ${reqs.length ? reqs.map(r=>`
+      <div class="off-req">
+        ${avatar(r.name,28)}
+        <div style="flex:1"><div style="font-size:13px;font-weight:500">${r.name}</div>
+          <div style="font-size:11px;color:var(--text2)">${fmtDate(r.from)}${r.to!==r.from?" – "+fmtDate(r.to):""} · ${r.reason}</div></div>
+        ${badge(r.status,r.status)}
+        ${r.status==="pending"?`
+          <button class="btn primary" style="font-size:11px;padding:4px 8px" onclick="approveOff('${r.id}',true)">Approve</button>
+          <button class="btn danger"  style="font-size:11px;padding:4px 8px" onclick="approveOff('${r.id}',false)">Deny</button>`:""
+        }
+      </div>`).join("") : empty("No requests")}
+  </div>`);
+}
+
+window.approveOff = async function(id, approve) {
+  await updateDoc(doc(db,"timeoff",id),{status: approve?"approved":"denied", reviewedBy: currentProfile.name, reviewedAt: serverTimestamp()});
+  toast(approve ? "Approved ✓" : "Denied"); renderTimeOff();
+};
+
+async function renderMemberTimeOff() {
+  const snap = await getDocs(query(collection(db,"timeoff"), where("name","==",currentProfile.name), orderBy("createdAt","desc")));
+  const mine = snap.docs.map(d=>({id:d.id,...d.data()}));
+  setMain(`
+  <div class="page-title">Request time off</div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">My requests</div></div>
+    ${mine.length ? mine.map(r=>`
+      <div class="off-req">
+        <div style="flex:1"><div style="font-size:13px;font-weight:500">${fmtDate(r.from)}${r.to!==r.from?" – "+fmtDate(r.to):""}</div>
+          <div style="font-size:11px;color:var(--text2)">${r.reason}</div></div>
+        ${badge(r.status,r.status)}
+      </div>`).join("") : empty("No requests yet")}
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">New request</div></div>
+    <div class="date-inputs">
+      <div><label>From</label><input type="date" id="off-from"/></div>
+      <div><label>To</label><input type="date" id="off-to"/></div>
+    </div>
+    <div class="add-row" style="margin-top:0">
+      <input type="text" id="off-reason" placeholder="Reason (optional)"/>
+      <button class="btn primary" onclick="submitOff()">Submit</button>
+    </div>
+  </div>`);
+}
+
+window.submitOff = async function() {
+  const from = document.getElementById("off-from").value; if(!from){alert("Pick a date");return;}
+  const to   = document.getElementById("off-to").value||from;
+  const reason = document.getElementById("off-reason").value||"Personal";
+  await addDoc(collection(db,"timeoff"),{name:currentProfile.name,from,to,reason,status:"pending",createdAt:serverTimestamp()});
+  toast("Request submitted ✓"); renderTimeOff();
+};
+
+// ══════════════════════════════════════════════
+// GOALS
+// ══════════════════════════════════════════════
+async function renderGoals() {
+  const snap = await getDocs(query(collection(db,"goals"), orderBy("createdAt","desc")));
+  const goals = snap.docs.map(d=>({id:d.id,...d.data()}));
+  const SM = {track:{cls:"g",label:"On track",c:"var(--green)"},risk:{cls:"a",label:"At risk",c:"var(--amber)"},behind:{cls:"r",label:"Behind",c:"var(--red)"}};
+  setMain(`
+  <div class="page-title">Goals — Q2 2026</div>
+  <div class="metrics">
+    <div class="metric"><div class="ml">Total</div><div class="mv">${goals.length}</div></div>
+    <div class="metric"><div class="ml">On track</div><div class="mv" style="color:var(--green)">${goals.filter(g=>g.status==="track").length}</div></div>
+    <div class="metric"><div class="ml">At risk</div><div class="mv" style="color:var(--amber)">${goals.filter(g=>g.status==="risk").length}</div></div>
+    <div class="metric"><div class="ml">Behind</div><div class="mv" style="color:var(--red)">${goals.filter(g=>g.status==="behind").length}</div></div>
+  </div>
+  <div class="card">
+    ${goals.length ? goals.map(g=>{const s=SM[g.status]||SM.track;return`
+      <div class="goal-row">
+        <div style="flex:1.2;min-width:0"><div style="font-size:13px;font-weight:500">${g.name}</div>
+          <div style="font-size:11px;color:var(--text2)">${g.cat} · ${g.owner||""}</div></div>
+        <div style="flex:1.5"><div class="track"><div class="fill ${s.cls}" style="width:${g.pct||0}%"></div></div></div>
+        <div style="font-size:12px;font-weight:600;color:var(--text2);min-width:32px;text-align:right">${g.pct||0}%</div>
+        <span style="font-size:10px;padding:2px 7px;border-radius:5px;font-weight:600;color:${s.c};background:${s.c}18">${s.label}</span>
+        ${isAdmin()?`<button class="icon-btn" onclick="editGoal('${g.id}')">✏️</button>`:""}
+      </div>`;}).join("") : empty("No goals yet — add one below")}
+    ${isAdmin()?`<button class="btn primary" style="margin-top:12px" onclick="openGoalModal()">+ Add goal</button>`:""}
+  </div>`);
+}
+
+window.openGoalModal = function(id=null) {
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay"; modal.id = "goal-modal";
+  modal.innerHTML = `<div class="modal" onclick="event.stopPropagation()">
+    <h3>New goal</h3>
+    <div class="modal-row"><label>Goal name</label><input type="text" id="gm-name" placeholder="e.g. Reach $50k MRR"/></div>
+    <div class="modal-row"><label>Category</label><select id="gm-cat"><option>Revenue</option><option>Sales</option><option>Content</option><option>Team</option><option>Support</option><option>Other</option></select></div>
+    <div class="modal-row"><label>Owner</label><select id="gm-owner">${Object.values(TEAM_PROFILES).map(p=>`<option>${p.name}</option>`).join("")}</select></div>
+    <div class="modal-row"><label>Progress %</label><input type="number" id="gm-pct" min="0" max="100" value="0"/></div>
+    <div class="modal-row"><label>Status</label><select id="gm-status"><option value="track">On track</option><option value="risk">At risk</option><option value="behind">Behind</option></select></div>
+    <div class="modal-btns">
+      <button class="btn" onclick="document.getElementById('goal-modal').remove()">Cancel</button>
+      <button class="btn primary" onclick="saveGoal()">Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+};
+
+window.saveGoal = async function() {
+  const name = document.getElementById("gm-name").value.trim(); if(!name) return;
+  await addDoc(collection(db,"goals"),{
+    name, cat:document.getElementById("gm-cat").value,
+    owner:document.getElementById("gm-owner").value,
+    pct:parseInt(document.getElementById("gm-pct").value)||0,
+    status:document.getElementById("gm-status").value,
+    createdAt:serverTimestamp(),
+  });
+  document.getElementById("goal-modal")?.remove();
+  toast("Goal added ✓"); renderGoals();
+};
+
+// ══════════════════════════════════════════════
+// FINANCIALS (Jaz + Sophia only)
+// ══════════════════════════════════════════════
+async function renderFinancials() {
+  if (!isFinance()) { setMain(`<div class="page-title">Financials</div><p style="color:var(--text2)">Access restricted.</p>`); return; }
+  const snap = await getDocs(query(collection(db,"financials"), orderBy("date","desc")));
+  const items = snap.docs.map(d=>({id:d.id,...d.data()}));
+  const revenue  = items.filter(i=>i.type==="revenue").reduce((s,i)=>s+(i.amount||0),0);
+  const expenses = items.filter(i=>i.type==="expense").reduce((s,i)=>s+(i.amount||0),0);
+  const payroll  = items.filter(i=>i.type==="payroll").reduce((s,i)=>s+(i.amount||0),0);
+  const net = revenue - expenses - payroll;
+  setMain(`
+  <div class="page-title">Financials</div>
+  <div class="metrics">
+    <div class="metric"><div class="ml">Revenue</div><div class="mv" style="color:var(--green)">$${revenue.toLocaleString()}</div></div>
+    <div class="metric"><div class="ml">Payroll</div><div class="mv" style="color:var(--amber)">$${payroll.toLocaleString()}</div></div>
+    <div class="metric"><div class="ml">Expenses</div><div class="mv" style="color:var(--red)">$${expenses.toLocaleString()}</div></div>
+    <div class="metric"><div class="ml">Net</div><div class="mv" style="color:${net>=0?"var(--green)":"var(--red)"}">$${net.toLocaleString()}</div></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">All entries</div>
+      <button class="btn primary" onclick="openFinancialModal()">+ Add entry</button></div>
+    ${items.length ? items.map(i=>`
+      <div class="pay-row">
+        <span style="font-size:18px">${i.type==="revenue"?"💚":i.type==="payroll"?"💛":"🔴"}</span>
+        <div style="flex:1"><div style="font-size:13px;font-weight:500">${i.label||i.type}</div>
+          <div style="font-size:11px;color:var(--text2)">${i.type} · ${fmtDate(i.date)} ${i.note?`· ${i.note}`:""}</div></div>
+        <span style="font-size:14px;font-weight:600;color:${i.type==="revenue"?"var(--green)":"var(--red)"}">${i.type==="revenue"?"+":"-"}$${(i.amount||0).toLocaleString()}</span>
+        ${isAdmin()?`<button class="icon-btn" onclick="deleteFinancial('${i.id}')">🗑</button>`:""}
+      </div>`).join("") : empty("No entries yet — add revenue, payroll, and expenses")}
+  </div>`);
+}
+
+window.openFinancialModal = function() {
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay"; modal.id = "fin-modal";
+  modal.innerHTML = `<div class="modal" onclick="event.stopPropagation()">
+    <h3>Add financial entry</h3>
+    <div class="modal-row"><label>Type</label><select id="fn-type"><option value="revenue">Revenue</option><option value="payroll">Payroll</option><option value="expense">Expense</option></select></div>
+    <div class="modal-row"><label>Label</label><input type="text" id="fn-label" placeholder="e.g. High-ticket sales, Alli salary, Software tool"/></div>
+    <div class="modal-row"><label>Amount ($)</label><input type="number" id="fn-amount" min="0" placeholder="0"/></div>
+    <div class="modal-row"><label>Date</label><input type="date" id="fn-date"/></div>
+    <div class="modal-row"><label>Note (optional)</label><input type="text" id="fn-note" placeholder="Any context..."/></div>
+    <div class="modal-btns">
+      <button class="btn" onclick="document.getElementById('fin-modal').remove()">Cancel</button>
+      <button class="btn primary" onclick="saveFinancial()">Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+};
+
+window.saveFinancial = async function() {
+  const amount = parseFloat(document.getElementById("fn-amount").value); if(!amount) return;
+  await addDoc(collection(db,"financials"),{
+    type:   document.getElementById("fn-type").value,
+    label:  document.getElementById("fn-label").value.trim(),
+    amount, date: document.getElementById("fn-date").value,
+    note:   document.getElementById("fn-note").value.trim(),
+    createdAt: serverTimestamp(), createdBy: currentProfile.name,
+  });
+  document.getElementById("fin-modal")?.remove();
+  toast("Entry saved ✓"); renderFinancials();
+};
+
+window.deleteFinancial = async function(id) {
+  if (!confirm("Delete this entry?")) return;
+  await deleteDoc(doc(db,"financials",id));
+  toast("Deleted"); renderFinancials();
+};
+
+// ══════════════════════════════════════════════
+// ANALYTICS
+// ══════════════════════════════════════════════
+async function renderAnalytics() {
+  const snap = await getDocs(collection(db,"tasks"));
+  const tasks = snap.docs.map(d=>({id:d.id,...d.data()}));
+  const members = Object.values(TEAM_PROFILES);
+  const today = new Date().toISOString().split("T")[0];
+
+  setMain(`
+  <div class="page-title">Analytics</div>
+  <div class="metrics">
+    <div class="metric"><div class="ml">Total tasks</div><div class="mv">${tasks.length}</div></div>
+    <div class="metric"><div class="ml">Completed</div><div class="mv" style="color:var(--green)">${tasks.filter(t=>t.done).length}</div></div>
+    <div class="metric"><div class="ml">Open</div><div class="mv" style="color:var(--amber)">${tasks.filter(t=>!t.done).length}</div></div>
+    <div class="metric"><div class="ml">Completion rate</div><div class="mv">${tasks.length?Math.round(tasks.filter(t=>t.done).length/tasks.length*100):0}%</div></div>
+  </div>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-head"><div class="card-title">Productivity per member</div></div>
+      ${members.map(m=>{
+        const total = tasks.filter(t=>t.assignee===m.name).length;
+        const done  = tasks.filter(t=>t.assignee===m.name&&t.done).length;
+        const open  = total - done;
+        const pct   = total ? Math.round(done/total*100) : 0;
+        return `<div style="padding:8px 0;border-bottom:0.5px solid var(--border)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+            <div class="avatar" style="width:24px;height:24px;font-size:9px;background:${m.color};color:${m.tc}">${m.init}</div>
+            <span style="font-size:13px;font-weight:500;flex:1">${m.name}</span>
+            <span style="font-size:11px;color:var(--text2)">${done}/${total} done</span>
+            <span style="font-size:11px;font-weight:600;color:${pct>=70?"var(--green)":pct>=40?"var(--amber)":"var(--red)"}">${pct}%</span>
+          </div>
+          <div class="track"><div class="fill ${pct>=70?"g":pct>=40?"a":"r"}" style="width:${pct}%"></div></div>
+        </div>`;}).join("")}
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">Tasks by priority</div></div>
+      ${["high","med","low"].map(p=>{
+        const count = tasks.filter(t=>t.pri===p).length;
+        const done  = tasks.filter(t=>t.pri===p&&t.done).length;
+        return `<div class="sales-row">
+          ${badge(p,p)}
+          <span style="flex:1;font-size:13px;margin-left:8px">${count} tasks</span>
+          <span style="font-size:12px;color:var(--text2)">${done} done</span>
+        </div>`;}).join("")}
+      <div style="margin-top:16px">
+        <div class="card-title" style="margin-bottom:10px">Content pipeline</div>
+        <div id="pipeline-stats">Loading...</div>
+      </div>
+    </div>
+  </div>`);
+
+  // Content stats
+  const csnap = await getDocs(collection(db,"content"));
+  const content = csnap.docs.map(d=>d.data());
+  const pipelineEl = document.getElementById("pipeline-stats");
+  if (pipelineEl) {
+    pipelineEl.innerHTML = CONTENT_STAGES.map(s=>{
+      const n = content.filter(c=>c.stage===s).length;
+      return `<div class="sales-row"><span style="flex:1;font-size:12px">${s}</span>
+        <span style="font-size:12px;font-weight:600;color:var(--text2)">${n}</span></div>`;
+    }).join("");
+  }
+}
+
+// ══════════════════════════════════════════════
+// UPDATES
+// ══════════════════════════════════════════════
+async function renderUpdates() {
+  const snap = await getDocs(query(collection(db,"announcements"), orderBy("createdAt","desc")));
+  const ann  = snap.docs.map(d=>({id:d.id,...d.data()}));
+  setMain(`
+  <div class="page-title">Updates</div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">Team announcements</div></div>
+    <div id="ann-list">
+      ${ann.map(a=>`<div class="announce">
+        <div class="announce-title">${a.text}</div>
+        <div class="announce-meta">Posted by ${a.by} · ${a.createdAt?.toDate?.()?.toLocaleDateString()||"recently"}</div>
+      </div>`).join("")||empty("No updates yet")}
+    </div>
+    ${isAdmin()?`
+    <div class="add-row" style="margin-top:12px">
+      <input type="text" id="ann-text" placeholder="Post an update (payroll info NOT shown here)..."/>
+      <button class="btn primary" onclick="postUpdate()">Post</button>
+    </div>`:""}
+  </div>`);
+}
+
+window.postUpdate = async function() {
+  const inp = document.getElementById("ann-text");
+  if (!inp?.value.trim()) return;
+  await addDoc(collection(db,"announcements"),{text:inp.value.trim(),by:currentProfile.name,createdAt:serverTimestamp()});
+  toast("Posted ✓"); renderUpdates();
+};
+
+// ══════════════════════════════════════════════
+// LINKS (per role)
+// ══════════════════════════════════════════════
+async function renderLinks() {
+  // Try to load custom links from Firestore, fall back to defaults
+  let myLinks = links.filter(l => l.roles.includes("all") || l.roles.includes(currentProfile.access));
+  try {
+    const snap = await getDocs(collection(db,"links"));
+    if (snap.size > 0) myLinks = snap.docs.map(d=>d.data()).filter(l=>!l.roles||l.roles.includes("all")||l.roles.includes(currentProfile.access));
+  } catch(e) {}
+  setMain(`
+  <div class="page-title">Quick links</div>
+  <div class="card">
+    <div class="links-grid">
+      ${myLinks.map(l=>`
+        <a class="link-card" href="${l.url}" target="_blank" rel="noopener">
+          <div class="link-icon">${l.icon}</div>
+          <div class="link-name">${l.name}</div>
+          <div class="link-desc">${l.desc}</div>
+        </a>`).join("")}
+    </div>
+  </div>`);
+}
+
+// ══════════════════════════════════════════════
+// SALES BOARD
+// ══════════════════════════════════════════════
+async function renderSalesBoard() {
+  setMain(`
+  <div class="page-title">Sales</div>
+  <div class="metrics">
+    <div class="metric"><div class="ml">Revenue (May)</div><div class="mv" style="font-size:18px">$42k</div><div class="ms">+8%</div></div>
+    <div class="metric"><div class="ml">New clients</div><div class="mv">7</div></div>
+    <div class="metric"><div class="ml">Deals closed</div><div class="mv">12</div></div>
+    <div class="metric"><div class="ml">Pipeline</div><div class="mv" style="font-size:18px">$91k</div></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">GHL Pipeline</div>
+      <a href="https://app.gohighlevel.com" target="_blank" class="btn primary">Open GHL →</a></div>
+    <p style="font-size:13px;color:var(--text2);padding:8px 0">Connect GHL CRM to see your live pipeline here. For now, use the button above to open GHL directly.</p>
+  </div>`);
+}
+
+// ══════════════════════════════════════════════
+// SETTINGS (admin only)
+// ══════════════════════════════════════════════
+async function renderSettings() {
+  if (!isAdmin()) { setMain(`<div class="page-title">Settings</div><p>Access restricted.</p>`); return; }
+  setMain(`
+  <div class="page-title">Settings</div>
+  <div class="two-col">
+    <div class="card">
+      <div class="card-head"><div class="card-title">Team members</div></div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:12px">To add/edit team members, update the TEAM_PROFILES object at the top of index.html, then create their account in Firebase Authentication.</p>
+      ${Object.entries(TEAM_PROFILES).map(([email,p])=>`
+        <div class="team-row">
+          <div class="avatar" style="width:28px;height:28px;font-size:10px;background:${p.color};color:${p.tc}">${p.init}</div>
+          <div style="flex:1"><div style="font-size:12px;font-weight:500">${p.name}</div>
+            <div style="font-size:10px;color:var(--text2)">${email}</div></div>
+          ${badge("info",p.access)}
+        </div>`).join("")}
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title">Task templates</div></div>
+      ${Object.entries(TASK_TEMPLATES).map(([name,steps])=>`
+        <div style="padding:8px 0;border-bottom:0.5px solid var(--border)">
+          <div style="font-size:13px;font-weight:500;margin-bottom:4px">${name}</div>
+          <div style="font-size:11px;color:var(--text2)">${steps.length} steps</div>
+          <button class="btn" style="font-size:11px;margin-top:4px" onclick="applyTemplateFromSettings('${name}')">Use template</button>
+        </div>`).join("")}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><div class="card-title">Quick links — edit URLs</div></div>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px">Update the Google Drive URLs for each shared drive below.</p>
+    ${DEFAULT_LINKS.map((l,i)=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:0.5px solid var(--border)">
+        <span style="font-size:16px;width:24px">${l.icon}</span>
+        <span style="font-size:13px;font-weight:500;min-width:120px">${l.name}</span>
+        <input type="text" value="${l.url}" id="link-url-${i}" style="flex:1;font-size:12px;padding:5px 8px;border-radius:5px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text)" />
+        <button class="btn" style="font-size:11px" onclick="saveLink(${i})">Save</button>
+      </div>`).join("")}
+  </div>`);
+}
+
+window.applyTemplateFromSettings = function(name) {
+  openTaskModal();
+  setTimeout(() => openTemplateModal(), 100);
+};
+
+window.saveLink = function(i) {
+  DEFAULT_LINKS[i].url = document.getElementById(`link-url-${i}`).value.trim();
+  toast("Link updated ✓");
+};
+
+// ══════════════════════════════════════════════
+// LOGIN KEYBOARD
+// ══════════════════════════════════════════════
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && document.getElementById("l-pass") === document.activeElement) doLogin();
+});
+window.doLogin  = doLogin;
+window.doLogout = doLogout;
 </script>
 
 <style>
@@ -51,39 +1220,38 @@ html,body{height:100%;font-family:'DM Sans',system-ui,sans-serif;background:var(
 button,input,select,textarea{font-family:inherit}
 a{color:inherit;text-decoration:none}
 
+/* LOGIN */
+#login{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:2rem;background:var(--bg)}
+.login-box{width:100%;max-width:360px}
+.login-logo{font-size:26px;font-weight:600;letter-spacing:-.02em;margin-bottom:4px;text-align:center}
+.login-sub{font-size:13px;color:var(--text2);margin-bottom:2rem;text-align:center}
+.login-field{margin-bottom:12px}
+.login-field label{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px}
+.login-field input{width:100%;font-size:14px;padding:10px 12px;border-radius:var(--r);border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);outline:none}
+.login-field input:focus{border-color:var(--blue)}
+#login-btn{width:100%;padding:11px;border-radius:var(--r);border:none;background:var(--text);color:var(--bg);font-size:14px;font-weight:600;cursor:pointer;margin-top:4px}
+#login-btn:hover{opacity:.85}
+#login-err{font-size:12px;color:var(--red);margin-top:8px;text-align:center;min-height:16px}
+
 /* APP */
 .app{display:flex;height:100vh;overflow:hidden}
 .sidebar{width:200px;flex-shrink:0;border-right:0.5px solid var(--border);display:flex;flex-direction:column;background:var(--bg)}
-.main{flex:1;overflow-y:auto;padding:1.5rem 1.75rem;background:var(--bg)}
-.sidebar-top{padding:18px 16px 14px;border-bottom:0.5px solid var(--border)}
-.sidebar-logo{font-size:16px;font-weight:600;letter-spacing:-.02em}
-.sidebar-user{display:flex;align-items:center;gap:6px;margin-top:4px}
-.online-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}
-.sidebar-uname{font-size:12px;color:var(--text2)}
+.main{flex:1;overflow-y:auto;padding:1.5rem 1.75rem}
+.sidebar-top{padding:16px;border-bottom:0.5px solid var(--border)}
+.sidebar-logo{font-size:15px;font-weight:600;letter-spacing:-.02em}
+.sidebar-uinfo{margin-top:6px}
+.sidebar-uname{font-size:13px;font-weight:500}
+.sidebar-urole{font-size:11px;color:var(--text2)}
 .nav-list{flex:1;padding:8px 8px 0;overflow-y:auto}
-.nav-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r);font-size:13px;color:var(--text2);cursor:pointer;transition:all .12s;margin-bottom:1px;border:none;background:none;width:100%;text-align:left}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r);font-size:13px;color:var(--text2);cursor:pointer;margin-bottom:1px;border:none;background:none;width:100%;text-align:left;transition:all .12s}
 .nav-item:hover{background:var(--bg2);color:var(--text)}
 .nav-item.active{background:var(--bg2);color:var(--text);font-weight:500}
-.nav-icon{font-size:15px;width:18px;text-align:center;flex-shrink:0}
+.nav-icon{font-size:14px;width:18px;text-align:center;flex-shrink:0}
 .sidebar-footer{padding:12px 16px;border-top:0.5px solid var(--border)}
-.logout-btn{font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0}
+.logout-btn{font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer}
 .logout-btn:hover{color:var(--text2)}
 
-/* LOGIN */
-#login{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:2rem}
-.login-logo{font-size:26px;font-weight:600;letter-spacing:-.02em;margin-bottom:4px}
-.login-sub{font-size:13px;color:var(--text2);margin-bottom:2.5rem}
-.people-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;width:100%;max-width:580px}
-@media(max-width:520px){.people-grid{grid-template-columns:repeat(2,1fr)}}
-.person-btn{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--rl);padding:16px 10px;cursor:pointer;text-align:center;transition:all .15s;display:flex;flex-direction:column;align-items:center}
-.person-btn:hover{background:var(--bg);border-color:var(--border2);transform:translateY(-1px)}
-.person-btn.is-admin{border-color:rgba(24,95,165,0.3)}
-.p-avatar{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;margin-bottom:8px}
-.p-name{font-size:12px;font-weight:500}
-.p-role{font-size:10px;color:var(--text2);margin-top:1px}
-.admin-tag{font-size:9px;background:var(--blue-bg);color:var(--blue);padding:2px 6px;border-radius:5px;margin-top:5px;display:inline-block;font-weight:600}
-
-/* COMMON */
+/* COMPONENTS */
 .page-title{font-size:18px;font-weight:600;letter-spacing:-.02em;margin-bottom:1.25rem}
 .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.25rem}
 .metrics.two{grid-template-columns:repeat(2,1fr)}
@@ -95,7 +1263,7 @@ a{color:inherit;text-decoration:none}
 .card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .card-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
-.btn{font-size:12px;padding:6px 12px;border-radius:6px;border:0.5px solid var(--border2);background:transparent;color:var(--text);cursor:pointer;transition:all .12s;font-weight:500}
+.btn{font-size:12px;padding:6px 12px;border-radius:6px;border:0.5px solid var(--border2);background:transparent;color:var(--text);cursor:pointer;font-weight:500;transition:all .12s}
 .btn:hover{background:var(--bg2)}
 .btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
 .btn.primary:hover{opacity:.85}
@@ -103,19 +1271,17 @@ a{color:inherit;text-decoration:none}
 .badge{font-size:10px;padding:2px 7px;border-radius:5px;font-weight:600;flex-shrink:0;white-space:nowrap}
 .badge.high{background:var(--red-bg);color:var(--red)}
 .badge.med{background:var(--amber-bg);color:var(--amber)}
-.badge.low,.badge.approved{background:var(--green-bg);color:var(--green)}
+.badge.low,.badge.approved,.badge.ceo,.badge.coo{background:var(--green-bg);color:var(--green)}
 .badge.done-b{background:var(--bg2);color:var(--text3)}
-.badge.info{background:var(--blue-bg);color:var(--blue)}
-.badge.pending{background:var(--amber-bg);color:var(--amber)}
-.badge.recurring{background:var(--teal-bg);color:var(--teal)}
-.badge.blocked{background:var(--red-bg);color:var(--red)}
+.badge.info,.badge.coach,.badge.editor{background:var(--blue-bg);color:var(--blue)}
+.badge.pending,.badge.sales,.badge.design,.badge.service,.badge.copy{background:var(--amber-bg);color:var(--amber)}
 .badge.denied{background:var(--red-bg);color:var(--red)}
 .avatar{border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;flex-shrink:0}
 .empty{font-size:13px;color:var(--text2);padding:10px 0}
-.add-row{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap;align-items:center}
+.add-row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
 .add-row input,.add-row select{font-size:12px;padding:7px 10px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);outline:none}
 .add-row input{flex:1;min-width:120px}
-.filter-row{display:flex;gap:5px;margin-bottom:12px;flex-wrap:wrap}
+.filter-row{display:flex;gap:5px;flex-wrap:wrap}
 .filter-btn{font-size:11px;padding:4px 10px;border-radius:10px;border:0.5px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-weight:500;transition:all .12s}
 .filter-btn.active{background:var(--text);color:var(--bg);border-color:var(--text)}
 .filter-btn:hover:not(.active){background:var(--bg2)}
@@ -123,70 +1289,37 @@ a{color:inherit;text-decoration:none}
 /* TASKS */
 .task-item{border-bottom:0.5px solid var(--border)}
 .task-item:last-child{border-bottom:none}
-.task-row{display:flex;align-items:center;gap:10px;padding:9px 0}
+.task-row-inner,.task-row-simple{display:flex;align-items:center;gap:10px;padding:9px 0}
 .task-cb{width:15px;height:15px;cursor:pointer;flex-shrink:0;accent-color:var(--text)}
 .task-body{flex:1;min-width:0}
 .task-name{font-size:13px;font-weight:500}
 .task-name.done{text-decoration:line-through;color:var(--text3);font-weight:400}
-.task-sub{font-size:11px;color:var(--text2);margin-top:1px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.task-actions{display:flex;gap:4px;align-items:center}
-.icon-btn{background:none;border:none;cursor:pointer;font-size:13px;padding:3px 5px;border-radius:4px;color:var(--text2);transition:all .12s}
+.task-sub{font-size:11px;color:var(--text2);margin-top:1px;display:flex;gap:8px;flex-wrap:wrap}
+.task-actions{display:flex;gap:4px}
+.icon-btn{background:none;border:none;cursor:pointer;font-size:13px;padding:3px 5px;border-radius:4px;color:var(--text2)}
 .icon-btn:hover{background:var(--bg2);color:var(--text)}
-
-/* SUBTASKS */
-.subtasks{padding:6px 0 6px 32px;background:var(--bg2);border-radius:0 0 var(--r) var(--r);margin-bottom:2px}
-.subtask-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:0.5px solid var(--border)}
-.subtask-row:last-child{border-bottom:none}
-.subtask-cb{width:13px;height:13px;cursor:pointer;accent-color:var(--text)}
-.subtask-label{font-size:12px;flex:1}
-.subtask-label.done{text-decoration:line-through;color:var(--text3)}
-.subtask-prog{font-size:10px;color:var(--text2);background:var(--bg3);padding:1px 6px;border-radius:4px;font-weight:500}
-.add-subtask-row{display:flex;gap:6px;margin-top:6px}
-.add-subtask-row input{flex:1;font-size:12px;padding:5px 8px;border-radius:5px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);outline:none}
-
-/* RECURRING BADGE */
 .recur-tag{font-size:10px;background:var(--teal-bg);color:var(--teal);padding:1px 6px;border-radius:4px;font-weight:600}
-
-/* DEPENDENCY */
-.dep-tag{font-size:10px;background:var(--red-bg);color:var(--red);padding:1px 6px;border-radius:4px;font-weight:600}
-
-/* MODAL */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;z-index:100}
-.modal{background:var(--bg);border-radius:var(--rl);padding:1.5rem;width:460px;max-width:95vw;border:0.5px solid var(--border2)}
-.modal h3{font-size:15px;font-weight:600;margin-bottom:1rem}
-.modal-row{margin-bottom:12px}
-.modal-row label{font-size:11px;font-weight:600;color:var(--text2);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
-.modal-row input,.modal-row select,.modal-row textarea{width:100%;font-size:13px;padding:8px 10px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);outline:none}
-.modal-row textarea{min-height:60px;resize:vertical}
-.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:1rem}
-
-/* TOAST */
-.toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--text);color:var(--bg);padding:10px 18px;border-radius:var(--r);font-size:13px;font-weight:500;z-index:200;opacity:0;transition:opacity .2s;pointer-events:none}
-.toast.show{opacity:1}
+.tmpl-tag{font-size:10px;background:var(--purple-bg);color:var(--purple);padding:1px 6px;border-radius:4px;font-weight:600}
 
 /* BOARDS */
-.board-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.board-col{background:var(--bg2);border-radius:var(--rl);padding:12px;min-height:200px}
-.board-col-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
-.board-count{font-size:10px;background:var(--bg);border:0.5px solid var(--border);padding:1px 7px;border-radius:8px;color:var(--text2);font-weight:500}
-.board-card{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--r);padding:10px 12px;margin-bottom:8px}
-.board-card-title{font-size:13px;font-weight:500;margin-bottom:6px}
-.board-tag{font-size:10px;padding:2px 7px;border-radius:5px;display:inline-block;font-weight:600}
+.board-cols{display:grid;grid-template-columns:repeat(5,minmax(180px,1fr));gap:10px;overflow-x:auto;padding-bottom:1rem}
+.board-col{background:var(--bg2);border-radius:var(--rl);padding:10px;min-height:200px;min-width:180px}
+.board-col-title{font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between}
+.board-count{font-size:10px;background:var(--bg);border:0.5px solid var(--border);padding:1px 6px;border-radius:8px;color:var(--text2)}
+.board-card{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--r);padding:9px 11px;margin-bottom:7px;cursor:pointer;transition:all .12s}
+.board-card:hover{border-color:var(--border2)}
+.board-card-title{font-size:12px;font-weight:500}
+.board-tag{font-size:10px;padding:2px 6px;border-radius:4px;display:inline-block;font-weight:600}
 .tag-content{background:var(--purple-bg);color:var(--purple)}
 .tag-link{background:var(--blue-bg);color:var(--blue)}
 .tag-idea{background:var(--amber-bg);color:var(--amber)}
 .tag-sop{background:var(--green-bg);color:var(--green)}
 .add-card-btn{font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;padding:4px 0;width:100%;text-align:left;font-weight:500}
 .add-card-btn:hover{color:var(--text2)}
-.add-card-row{display:flex;gap:6px;margin-top:6px}
-.add-card-row input{flex:1;font-size:12px;padding:6px 8px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg);color:var(--text);outline:none}
 
 /* MISC */
 .team-row,.pay-row,.off-req,.sales-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:0.5px solid var(--border)}
 .team-row:last-child,.pay-row:last-child,.off-req:last-child,.sales-row:last-child{border-bottom:none}
-.status-pill{font-size:10px;padding:2px 8px;border-radius:5px;font-weight:600}
-.online-p{background:var(--green-bg);color:var(--green)}
-.away-p{background:var(--bg2);color:var(--text3);border:0.5px solid var(--border)}
 .date-inputs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
 .date-inputs label{font-size:11px;color:var(--text2);font-weight:500;display:block;margin-bottom:4px}
 .date-inputs input{width:100%;font-size:12px;padding:7px 9px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);outline:none}
@@ -206,16 +1339,39 @@ a{color:inherit;text-decoration:none}
 .fill.g{background:var(--green)}.fill.a{background:var(--amber)}.fill.r{background:var(--red)}
 .up{color:var(--green);font-size:11px;font-weight:600}
 .dn{color:var(--red);font-size:11px;font-weight:600}
-.email-notice{font-size:12px;color:var(--amber);background:var(--amber-bg);border-radius:6px;padding:8px 12px;margin-bottom:12px}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal{background:var(--bg);border-radius:var(--rl);padding:1.5rem;width:460px;max-width:95vw;border:0.5px solid var(--border2);max-height:90vh;overflow-y:auto}
+.modal h3{font-size:15px;font-weight:600;margin-bottom:1rem}
+.modal-row{margin-bottom:12px}
+.modal-row label{font-size:11px;font-weight:600;color:var(--text2);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
+.modal-row input,.modal-row select,.modal-row textarea{width:100%;font-size:13px;padding:8px 10px;border-radius:6px;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text);outline:none}
+.modal-row textarea{min-height:70px;resize:vertical}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:1rem}
+.tmpl-item{padding:10px;border:0.5px solid var(--border);border-radius:var(--r);margin-bottom:8px;cursor:pointer;transition:all .12s}
+.tmpl-item:hover{background:var(--bg2);border-color:var(--border2)}
+
+/* AI MODAL */
+#ai-result{margin-top:12px;font-size:12px;white-space:pre-wrap;background:var(--bg2);border-radius:var(--r);padding:12px;min-height:80px;max-height:300px;overflow-y:auto;color:var(--text)}
+
+/* TOAST */
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--text);color:var(--bg);padding:10px 18px;border-radius:var(--r);font-size:13px;font-weight:500;z-index:200;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
 </style>
 </head>
 <body>
 
 <!-- LOGIN -->
 <div id="login">
-  <div class="login-logo">⚡ OpsHQ</div>
-  <div class="login-sub">Pick your name to continue.</div>
-  <div class="people-grid" id="people-grid"></div>
+  <div class="login-box">
+    <div class="login-logo">⚡ OpsHQ</div>
+    <div class="login-sub">Inversiones Para Latinos — Team Portal</div>
+    <div class="login-field"><label>Email</label><input type="email" id="l-email" placeholder="you@inversiones.com" autocomplete="email"/></div>
+    <div class="login-field"><label>Password</label><input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password"/></div>
+    <button id="login-btn" onclick="doLogin()">Sign in</button>
+    <div id="login-err"></div>
+  </div>
 </div>
 
 <!-- APP -->
@@ -223,52 +1379,80 @@ a{color:inherit;text-decoration:none}
   <div class="sidebar">
     <div class="sidebar-top">
       <div class="sidebar-logo">⚡ OpsHQ</div>
-      <div class="sidebar-user">
-        <div class="online-dot"></div>
+      <div class="sidebar-uinfo">
         <div class="sidebar-uname" id="sidebar-name"></div>
+        <div class="sidebar-urole" id="sidebar-role"></div>
       </div>
     </div>
     <div class="nav-list" id="nav-list"></div>
     <div class="sidebar-footer">
-      <button class="logout-btn" onclick="logout()">← Switch user</button>
+      <button class="logout-btn" onclick="doLogout()">← Sign out</button>
     </div>
   </div>
   <div class="main" id="main"></div>
 </div>
 
 <!-- TASK MODAL -->
-<div class="modal-overlay" id="task-modal" style="display:none" onclick="closeModal(event)">
+<div class="modal-overlay" id="task-modal" style="display:none" onclick="if(event.target===this)closeTaskModal()">
   <div class="modal" onclick="event.stopPropagation()">
-    <h3 id="modal-title">New task</h3>
-    <div class="modal-row"><label>Task name</label><input type="text" id="m-name" placeholder="What needs to be done?" /></div>
-    <div class="modal-row"><label>Assign to</label>
-      <select id="m-who"></select>
-    </div>
+    <h3 id="tm-title">New task</h3>
+    <div class="modal-row"><label>Task name</label><input type="text" id="tm-name" placeholder="What needs to be done?"/></div>
+    <div class="modal-row"><label>Assign to</label><select id="tm-who"></select></div>
     <div class="modal-row"><label>Priority</label>
-      <select id="m-pri">
-        <option value="high">🔴 High</option>
-        <option value="med" selected>🟡 Med</option>
-        <option value="low">🟢 Low</option>
-      </select>
-    </div>
-    <div class="modal-row"><label>Due date</label><input type="date" id="m-due" /></div>
+      <select id="tm-pri"><option value="high">🔴 High</option><option value="med" selected>🟡 Med</option><option value="low">🟢 Low</option></select></div>
+    <div class="modal-row"><label>Due date</label><input type="date" id="tm-due"/></div>
     <div class="modal-row"><label>Recurring</label>
-      <select id="m-recur">
-        <option value="none">None</option>
-        <option value="daily">Daily</option>
-        <option value="weekly">Weekly</option>
-        <option value="monthly">Monthly</option>
-      </select>
-    </div>
-    <div class="modal-row"><label>Blocked by task # (optional)</label>
-      <select id="m-dep">
-        <option value="">None — not blocked</option>
-      </select>
-    </div>
-    <div class="modal-row"><label>Notes</label><textarea id="m-notes" placeholder="Any extra context..."></textarea></div>
+      <select id="tm-recur"><option value="none">None</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></div>
+    <div class="modal-row"><label>Notes</label><textarea id="tm-notes" placeholder="Any context..."></textarea></div>
     <div class="modal-btns">
-      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="closeTaskModal()">Cancel</button>
+      <button class="btn" onclick="openTemplateModal()">📋 Use template</button>
       <button class="btn primary" onclick="saveTask()">Save task</button>
+    </div>
+  </div>
+</div>
+
+<!-- TEMPLATE MODAL -->
+<div class="modal-overlay" id="template-modal" style="display:none" onclick="if(event.target===this)closeTemplateModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>Choose a template</h3>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px">This will create all steps as individual tasks assigned to the selected person.</p>
+    <div id="tmpl-list"></div>
+    <div class="modal-btns"><button class="btn" onclick="closeTemplateModal()">Cancel</button></div>
+  </div>
+</div>
+
+<!-- CONTENT MODAL -->
+<div class="modal-overlay" id="content-modal" style="display:none" onclick="if(event.target===this)closeContentModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3>New content idea</h3>
+    <div class="modal-row"><label>Title / idea</label><input type="text" id="cm-title" placeholder="e.g. Lo que tu banco NO quiere que sepas..."/></div>
+    <div class="modal-row"><label>Stage</label>
+      <select id="cm-stage">${CONTENT_STAGES.map(s=>`<option>${s}</option>`).join("")}</select></div>
+    <div class="modal-row"><label>Type</label>
+      <select id="cm-type">${CONTENT_TYPES.map(t=>`<option>${t}</option>`).join("")}</select></div>
+    <div class="modal-row"><label>Assignee</label><select id="cm-assignee"></select></div>
+    <div class="modal-row"><label>Notes / inspiration link</label><textarea id="cm-notes" placeholder="Any context, inspiration URLs, notes..."></textarea></div>
+    <div class="modal-btns">
+      <button class="btn" onclick="closeContentModal()">Cancel</button>
+      <button class="btn primary" onclick="saveContent()">Add idea</button>
+    </div>
+  </div>
+</div>
+
+<!-- AI SCRIPT MODAL -->
+<div class="modal-overlay" id="ai-modal" style="display:none" onclick="if(event.target===this)closeAIModal()">
+  <div class="modal" style="width:560px" onclick="event.stopPropagation()">
+    <h3>🤖 AI Script Generator</h3>
+    <p style="font-size:12px;color:var(--text2);margin-bottom:12px">Uses Jaz's script style & voice. Enter a topic and get a ready-to-record script.</p>
+    <div class="modal-row"><label>Topic / idea</label><input type="text" id="ai-topic" placeholder="e.g. Cómo invertir con $500 siendo inmigrante"/></div>
+    <div class="modal-row"><label>Format</label>
+      <select id="ai-type"><option value="short">Short-form (60-90s Reel/TikTok)</option><option value="long">Long-form (YouTube)</option></select></div>
+    <button class="btn primary" style="width:100%;margin-bottom:4px" onclick="generateScript()">Generate script</button>
+    <div id="ai-result"></div>
+    <div class="modal-btns" style="margin-top:8px">
+      <button class="btn" onclick="closeAIModal()">Close</button>
+      <button class="btn primary" onclick="navigator.clipboard.writeText(document.getElementById('ai-result').textContent).then(()=>toast('Copied!'))">Copy script</button>
     </div>
   </div>
 </div>
@@ -277,737 +1461,13 @@ a{color:inherit;text-decoration:none}
 <div class="toast" id="toast"></div>
 
 <script>
-// ════════════════════════════════════════
-// EDIT YOUR TEAM HERE
-// admin:true = sees everything
-// email = used for notifications
-// ════════════════════════════════════════
-const TEAM = [
-  { name:"You",       role:"Owner",      init:"YO", color:"#E6F1FB", tc:"#185FA5", admin:true,  online:true,  email:"you@yourdomain.com"       },
-  { name:"Jaz",       role:"Admin",      init:"JZ", color:"#EEEDFE", tc:"#534AB7", admin:true,  online:true,  email:"jaz@yourdomain.com"        },
-  { name:"Maria G.",  role:"Sales Lead", init:"MG", color:"#E1F5EE", tc:"#0F6E56", admin:false, online:true,  email:"maria@yourdomain.com"      },
-  { name:"Carlos R.", role:"Ops",        init:"CR", color:"#FAEEDA", tc:"#854F0B", admin:false, online:true,  email:"carlos@yourdomain.com"     },
-  { name:"Sofia M.",  role:"Marketing",  init:"SM", color:"#FBEAF0", tc:"#993556", admin:false, online:false, email:"sofia@yourdomain.com"      },
-  { name:"Diego L.",  role:"Support",    init:"DL", color:"#EAF3DE", tc:"#3B6D11", admin:false, online:true,  email:"diego@yourdomain.com"      },
-  { name:"Ana P.",    role:"Admin",      init:"AP", color:"#FAECE7", tc:"#993C1D", admin:false, online:true,  email:"ana@yourdomain.com"        },
-  { name:"Luis T.",   role:"Dev",        init:"LT", color:"#E6F1FB", tc:"#185FA5", admin:false, online:false, email:"luis@yourdomain.com"       },
-  { name:"Rosa V.",   role:"Sales",      init:"RV", color:"#FBEAF0", tc:"#993556", admin:false, online:true,  email:"rosa@yourdomain.com"       },
-  { name:"Javier M.", role:"Support",    init:"JM", color:"#EAF3DE", tc:"#3B6D11", admin:false, online:false, email:"javier@yourdomain.com"     },
-  { name:"Camila F.", role:"Marketing",  init:"CF", color:"#EEEDFE", tc:"#534AB7", admin:false, online:true,  email:"camila@yourdomain.com"     },
-  { name:"Pedro S.",  role:"Dev",        init:"PS", color:"#FAEEDA", tc:"#854F0B", admin:false, online:true,  email:"pedro@yourdomain.com"      },
-];
-
-// ════════════════════════════════════════
-// EDIT YOUR QUICK LINKS HERE
-// ════════════════════════════════════════
-const LINKS = [
-  { icon:"🔗", name:"GHL CRM",   desc:"Go High Level",  url:"https://app.gohighlevel.com"  },
-  { icon:"📅", name:"Calendar",  desc:"Google Cal",     url:"https://calendar.google.com"  },
-  { icon:"💬", name:"Slack",     desc:"Team chat",      url:"https://slack.com"            },
-  { icon:"💳", name:"Payroll",   desc:"Gusto",          url:"https://gusto.com"            },
-  { icon:"📈", name:"Analytics", desc:"GA4",            url:"https://analytics.google.com" },
-  { icon:"📧", name:"Gmail",     desc:"Email",          url:"https://mail.google.com"      },
-  { icon:"🗂",  name:"Drive",    desc:"Google Drive",   url:"https://drive.google.com"     },
-  { icon:"📊", name:"Notion",    desc:"Workspace",      url:"https://notion.so"            },
-];
-
-// ════════════════════════════════════════
-// DATA
-// ════════════════════════════════════════
-let nextId = 100;
-let TASKS = [
-  { id:1,  text:"Follow up with GHL leads",    assignee:"Maria G.",  pri:"high", done:false, due:"2026-05-07", recur:"weekly",  blockedBy:null,  subtasks:[{text:"Export leads list",done:true},{text:"Write follow-up template",done:false}], notes:"Focus on hot leads first" },
-  { id:2,  text:"Review May payroll",          assignee:"Ana P.",    pri:"high", done:false, due:"2026-05-13", recur:"monthly", blockedBy:null,  subtasks:[], notes:"" },
-  { id:3,  text:"Update Q2 sales report",      assignee:"Sofia M.",  pri:"med",  done:false, due:"2026-05-10", recur:"none",    blockedBy:1,     subtasks:[{text:"Pull GHL data",done:false},{text:"Fill spreadsheet",done:false},{text:"Send to team",done:false}], notes:"" },
-  { id:4,  text:"Send June team schedule",     assignee:"Carlos R.", pri:"med",  done:false, due:"2026-05-09", recur:"monthly", blockedBy:null,  subtasks:[], notes:"" },
-  { id:5,  text:"Onboard new support rep",     assignee:"Diego L.",  pri:"med",  done:false, due:"2026-05-12", recur:"none",    blockedBy:null,  subtasks:[{text:"Send welcome email",done:true},{text:"Share SOPs",done:false},{text:"First 1:1",done:false}], notes:"" },
-  { id:6,  text:"Fix CRM pipeline bug",        assignee:"Luis T.",   pri:"high", done:false, due:"2026-05-08", recur:"none",    blockedBy:null,  subtasks:[], notes:"" },
-  { id:7,  text:"Design May campaign",         assignee:"Camila F.", pri:"med",  done:false, due:"2026-05-11", recur:"monthly", blockedBy:6,     subtasks:[{text:"Mood board",done:false},{text:"Copy draft",done:false}], notes:"" },
-  { id:8,  text:"Weekly check-in prep",        assignee:"Jaz",       pri:"low",  done:false, due:"2026-05-09", recur:"weekly",  blockedBy:null,  subtasks:[], notes:"" },
-  { id:9,  text:"Call top 5 leads",            assignee:"Rosa V.",   pri:"high", done:false, due:"2026-05-07", recur:"weekly",  blockedBy:null,  subtasks:[], notes:"" },
-  { id:10, text:"QA test checkout flow",       assignee:"Pedro S.",  pri:"med",  done:false, due:"2026-05-10", recur:"none",    blockedBy:6,     subtasks:[], notes:"" },
-];
-
-let BOARDS = {
-  "Content Ideas":    [{title:"Reel: How we close deals fast",tag:"content"},{title:"Blog: Top 5 CRM tips",tag:"idea"},{title:"Email sequence for cold leads",tag:"content"}],
-  "Links & Resources":[{title:"GHL Tutorial (YouTube)",tag:"link"},{title:"Brand kit — Canva",tag:"link"},{title:"Sales script v3",tag:"sop"}],
-  "In Progress":      [{title:"May content calendar",tag:"content"},{title:"Instagram grid plan",tag:"idea"}],
-};
-
-let OFF_REQUESTS = [
-  { name:"Ana P.",    from:"2026-05-09", to:"2026-05-09", reason:"Personal", status:"approved" },
-  { name:"Carlos R.", from:"2026-05-22", to:"2026-05-23", reason:"Vacation", status:"approved" },
-  { name:"Rosa V.",   from:"2026-05-14", to:"2026-05-14", reason:"Medical",  status:"pending"  },
-  { name:"Sofia M.",  from:"2026-06-02", to:"2026-06-04", reason:"Travel",   status:"pending"  },
-];
-
-let ANNOUNCEMENTS = [
-  { text:"🎉 May targets: we're at 84% — keep pushing!", by:"You",  time:"2h ago"     },
-  { text:"📋 Payroll runs May 15 — submit hours by May 13", by:"You", time:"yesterday" },
-  { text:"🧑‍💼 Welcome Luis T. to the dev team!",           by:"Jaz",  time:"3 days ago" },
-];
-
-const GOALS = [
-  { name:"Reach $50k MRR",       cat:"Revenue", owner:"Maria G.", pct:84, status:"track"  },
-  { name:"Close 15 deals/month", cat:"Sales",   owner:"Maria G.", pct:80, status:"track"  },
-  { name:"Hire 2 team members",  cat:"Team",    owner:"Ana P.",   pct:50, status:"risk"   },
-  { name:"Launch client portal", cat:"Product", owner:"Luis T.",  pct:30, status:"behind" },
-  { name:"95% support CSAT",     cat:"Support", owner:"Diego L.", pct:91, status:"track"  },
-];
-
-const PAYROLL = [
-  { name:"Maria G.",  role:"Sales Lead", salary:"$3,800", status:"paid"    },
-  { name:"Carlos R.", role:"Ops",        salary:"$3,200", status:"paid"    },
-  { name:"Sofia M.",  role:"Marketing",  salary:"$3,000", status:"pending" },
-  { name:"Diego L.",  role:"Support",    salary:"$2,800", status:"paid"    },
-  { name:"Ana P.",    role:"Admin",      salary:"$2,800", status:"paid"    },
-  { name:"Luis T.",   role:"Dev",        salary:"$2,800", status:"paid"    },
-  { name:"Rosa V.",   role:"Sales",      salary:"$2,800", status:"paid"    },
-  { name:"Javier M.", role:"Support",    salary:"$2,700", status:"paid"    },
-  { name:"Camila F.", role:"Marketing",  salary:"$2,700", status:"pending" },
-  { name:"Pedro S.",  role:"Dev",        salary:"$2,800", status:"paid"    },
-];
-
-// ════════════════════
-// STATE
-// ════════════════════
-let currentUser = null;
-let taskFilter  = 'all';
-let editingTaskId = null;
-let expandedTasks = new Set();
-
-// ── HELPERS ──
-function teamOf(name){ return TEAM.find(t=>t.name===name)||{color:'var(--bg2)',tc:'var(--text2)'}; }
-function initials(name){ return name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase(); }
-function avatar(name,size=26){
-  const m=teamOf(name);const fs=Math.round(size*0.38);
-  return `<div class="avatar" style="width:${size}px;height:${size}px;font-size:${fs}px;background:${m.color};color:${m.tc}">${initials(name)}</div>`;
-}
-function badge(cls,label){ return `<span class="badge ${cls}">${label}</span>`; }
-function empty(msg){ return `<div class="empty">${msg}</div>`; }
-function fmtDate(d){ if(!d)return'TBD'; const parts=d.split('-'); return parts.length===3?`${parts[1]}/${parts[2]}`:`${d}`; }
-function isBlocked(t){ return t.blockedBy && !TASKS.find(x=>x.id===t.blockedBy)?.done; }
-
-function toast(msg){
-  const el=document.getElementById('toast');
-  el.textContent=msg; el.classList.add('show');
-  setTimeout(()=>el.classList.remove('show'),2800);
-}
-
-// ── EMAIL ──
-function sendEmail(toName, toEmail, subject, message, taskName, dueDate){
-  if(!EMAIL_ENABLED){ console.log('EmailJS not configured — would send:',subject,'to',toEmail); return; }
-  emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-    to_name: toName, to_email: toEmail,
-    subject, message, task_name: taskName,
-    assigned_by: currentUser?.name||'Admin', due_date: dueDate||'TBD',
-  }).then(()=>console.log('Email sent to',toEmail))
-    .catch(e=>console.warn('EmailJS error:',e));
-}
-
-function notifyAssignment(task){
-  const m=teamOf(task.assignee);
-  if(!m.email) return;
-  sendEmail(
-    task.assignee, m.email,
-    `New task assigned: ${task.text}`,
-    `Hi ${task.assignee.split(' ')[0]}, you have a new ${task.pri} priority task assigned to you.`,
-    task.text, fmtDate(task.due)
-  );
-}
-
-function notifyApproval(req, approved){
-  const m=teamOf(req.name);
-  if(!m.email) return;
-  sendEmail(
-    req.name, m.email,
-    `Time-off request ${approved?'approved':'denied'}`,
-    `Hi ${req.name.split(' ')[0]}, your time-off request for ${req.from} has been ${approved?'approved ✅':'denied ❌'}.`,
-    `Time off: ${req.from}–${req.to}`, req.from
-  );
-}
-
-// ── RECURRING: create next task after completing ──
-function createRecurringNext(task){
-  if(!task.recur||task.recur==='none') return;
-  const base=new Date(task.due||new Date());
-  if(isNaN(base)) return;
-  if(task.recur==='daily')   base.setDate(base.getDate()+1);
-  if(task.recur==='weekly')  base.setDate(base.getDate()+7);
-  if(task.recur==='monthly') base.setMonth(base.getMonth()+1);
-  const newDue=base.toISOString().split('T')[0];
-  const newTask={
-    id:++nextId, text:task.text, assignee:task.assignee,
-    pri:task.pri, done:false, due:newDue,
-    recur:task.recur, blockedBy:null,
-    subtasks:task.subtasks.map(s=>({...s,done:false})),
-    notes:task.notes,
-  };
-  TASKS.push(newTask);
-  toast(`↻ Recurring task created for ${fmtDate(newDue)}`);
-  if(EMAIL_ENABLED) notifyAssignment(newTask);
-}
-
-// ════════════════════
-// LOGIN
-// ════════════════════
-function renderLogin(){
-  document.getElementById('people-grid').innerHTML=TEAM.map(m=>`
-    <div class="person-btn ${m.admin?'is-admin':''}" onclick="login('${m.name}')">
-      <div class="p-avatar" style="background:${m.color};color:${m.tc}">${m.init}</div>
-      <div class="p-name">${m.name}</div>
-      <div class="p-role">${m.role}</div>
-      ${m.admin?'<span class="admin-tag">Admin</span>':''}
-    </div>`).join('');
-}
-
-function login(name){
-  currentUser=teamOf(name);
-  document.getElementById('login').style.display='none';
-  document.getElementById('app').style.display='flex';
-  document.getElementById('sidebar-name').textContent=name;
-  buildNav(); go('overview');
-}
-function logout(){
-  document.getElementById('login').style.display='flex';
-  document.getElementById('app').style.display='none';
-  currentUser=null;
-}
-
-// ════════════════════
-// NAV
-// ════════════════════
-const ADMIN_NAV=[
-  {id:'overview',icon:'🏠',label:'Overview'},
-  {id:'tasks',   icon:'✅',label:'All tasks'},
-  {id:'boards',  icon:'📋',label:'Boards'},
-  {id:'team',    icon:'👥',label:'Team'},
-  {id:'timeoff', icon:'📅',label:'Time off'},
-  {id:'goals',   icon:'🎯',label:'Goals'},
-  {id:'payroll', icon:'💳',label:'Payroll'},
-  {id:'sales',   icon:'📈',label:'Sales'},
-  {id:'updates', icon:'📢',label:'Updates'},
-  {id:'links',   icon:'🔗',label:'Quick links'},
-];
-const MEMBER_NAV=[
-  {id:'overview',icon:'🏠',label:'My overview'},
-  {id:'tasks',   icon:'✅',label:'My tasks'},
-  {id:'boards',  icon:'📋',label:'Boards'},
-  {id:'timeoff', icon:'📅',label:'Request time off'},
-  {id:'updates', icon:'📢',label:'Updates'},
-  {id:'links',   icon:'🔗',label:'Quick links'},
-];
-
-function buildNav(){
-  const nav=currentUser.admin?ADMIN_NAV:MEMBER_NAV;
-  document.getElementById('nav-list').innerHTML=nav.map(n=>`
-    <button class="nav-item" id="nav-${n.id}" onclick="go('${n.id}')">
-      <span class="nav-icon">${n.icon}</span>${n.label}
-    </button>`).join('');
-}
-function setNav(id){
-  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const el=document.getElementById('nav-'+id); if(el)el.classList.add('active');
-}
-function go(view){
-  setNav(view);
-  const m=document.getElementById('main');
-  const views={
-    overview:()=>currentUser.admin?adminOverview():memberOverview(),
-    tasks:   ()=>currentUser.admin?adminTasks():memberTasks(),
-    boards:  renderBoards, team:renderTeam,
-    timeoff: ()=>currentUser.admin?adminTimeOff():memberTimeOff(),
-    goals:   renderGoals, payroll:renderPayroll,
-    sales:   renderSales, updates:renderUpdates, links:renderLinks,
-  };
-  m.innerHTML=views[view]?views[view]():'';
-}
-
-// ════════════════════
-// TASK MODAL
-// ════════════════════
-function openNewTaskModal(preAssign){
-  editingTaskId=null;
-  document.getElementById('modal-title').textContent='New task';
-  document.getElementById('m-name').value='';
-  document.getElementById('m-notes').value='';
-  document.getElementById('m-due').value='';
-  document.getElementById('m-recur').value='none';
-  document.getElementById('m-pri').value='med';
-  populateModalAssignee(preAssign||'');
-  populateModalDeps(null);
-  document.getElementById('task-modal').style.display='flex';
-}
-function openEditModal(id){
-  const t=TASKS.find(x=>x.id===id); if(!t)return;
-  editingTaskId=id;
-  document.getElementById('modal-title').textContent='Edit task';
-  document.getElementById('m-name').value=t.text;
-  document.getElementById('m-notes').value=t.notes||'';
-  document.getElementById('m-due').value=t.due||'';
-  document.getElementById('m-recur').value=t.recur||'none';
-  document.getElementById('m-pri').value=t.pri;
-  populateModalAssignee(t.assignee);
-  populateModalDeps(t.blockedBy);
-  document.getElementById('task-modal').style.display='flex';
-}
-function populateModalAssignee(selected){
-  document.getElementById('m-who').innerHTML=TEAM.map(m=>`<option value="${m.name}" ${m.name===selected?'selected':''}>${m.name} — ${m.role}</option>`).join('');
-}
-function populateModalDeps(selected){
-  const sel=document.getElementById('m-dep');
-  sel.innerHTML='<option value="">None — not blocked</option>'+
-    TASKS.filter(t=>t.id!==editingTaskId).map(t=>`<option value="${t.id}" ${t.id===selected?'selected':''}>#${t.id} ${t.text.slice(0,40)}</option>`).join('');
-}
-function closeModal(e){
-  if(e&&e.target!==document.getElementById('task-modal'))return;
-  document.getElementById('task-modal').style.display='none';
-}
-function saveTask(){
-  const name=document.getElementById('m-name').value.trim(); if(!name)return;
-  const assignee=document.getElementById('m-who').value;
-  const pri=document.getElementById('m-pri').value;
-  const due=document.getElementById('m-due').value;
-  const recur=document.getElementById('m-recur').value;
-  const depVal=document.getElementById('m-dep').value;
-  const blockedBy=depVal?parseInt(depVal):null;
-  const notes=document.getElementById('m-notes').value.trim();
-  const isNew=!editingTaskId;
-  if(editingTaskId){
-    const t=TASKS.find(x=>x.id===editingTaskId);
-    Object.assign(t,{text:name,assignee,pri,due,recur,blockedBy,notes});
-    toast('Task updated');
-  } else {
-    const t={id:++nextId,text:name,assignee,pri,done:false,due,recur,blockedBy,subtasks:[],notes};
-    TASKS.unshift(t);
-    toast('Task created');
-    if(EMAIL_ENABLED) notifyAssignment(t);
-    else if(!EMAIL_ENABLED) console.log('Would notify',assignee,'about:',name);
+// Populate content assignee dropdown after page loads
+document.addEventListener("DOMContentLoaded", () => {
+  const sel = document.getElementById("cm-assignee");
+  if (sel && typeof TEAM_PROFILES !== "undefined") {
+    sel.innerHTML = Object.values(TEAM_PROFILES).map(p=>`<option value="${p.name}">${p.name}</option>`).join("");
   }
-  document.getElementById('task-modal').style.display='none';
-  go(currentUser.admin?'tasks':'tasks');
-}
-
-// ════════════════════
-// TASK RENDERING
-// ════════════════════
-function taskHTML(t, showAssignee=true){
-  const blocked=isBlocked(t);
-  const blocker=blocked?TASKS.find(x=>x.id===t.blockedBy):null;
-  const subDone=t.subtasks.filter(s=>s.done).length;
-  const subTotal=t.subtasks.length;
-  const expanded=expandedTasks.has(t.id);
-  const recurLabel=t.recur&&t.recur!=='none'?`<span class="recur-tag">↻ ${t.recur}</span>`:'';
-  const depLabel=blocked?`<span class="dep-tag">🔒 blocked by #${t.blockedBy}</span>`:'';
-
-  return `
-  <div class="task-item" id="ti-${t.id}">
-    <div class="task-row">
-      <input type="checkbox" class="task-cb" ${t.done?'checked':''} ${blocked?'disabled title="Blocked"':''} onchange="toggleTask(${t.id})">
-      <div class="task-body">
-        <div class="task-name ${t.done?'done':''}">${t.text}</div>
-        <div class="task-sub">
-          ${showAssignee&&t.assignee?`<span>${t.assignee}</span>`:''}
-          ${t.due?`<span>Due ${fmtDate(t.due)}</span>`:''}
-          ${recurLabel}${depLabel}
-          ${subTotal>0?`<span class="subtask-prog">${subDone}/${subTotal} steps</span>`:''}
-        </div>
-      </div>
-      <span class="badge ${t.done?'done-b':blocked?'blocked':t.pri}">${t.done?'done':blocked?'blocked':t.pri}</span>
-      ${showAssignee?avatar(t.assignee,24):''}
-      <div class="task-actions">
-        <button class="icon-btn" title="Subtasks" onclick="toggleSubtasks(${t.id})">📝</button>
-        <button class="icon-btn" title="Edit" onclick="openEditModal(${t.id})">✏️</button>
-        <button class="icon-btn" title="Delete" onclick="deleteTask(${t.id})">🗑</button>
-      </div>
-    </div>
-    ${expanded?subtasksHTML(t):''}
-  </div>`;
-}
-
-function subtasksHTML(t){
-  const rows=t.subtasks.map((s,si)=>`
-    <div class="subtask-row">
-      <input type="checkbox" class="subtask-cb" ${s.done?'checked':''} onchange="toggleSubtask(${t.id},${si})">
-      <span class="subtask-label ${s.done?'done':''}">${s.text}</span>
-      <button class="icon-btn" style="font-size:11px" onclick="deleteSubtask(${t.id},${si})">✕</button>
-    </div>`).join('');
-  return `
-  <div class="subtasks">
-    ${rows||'<div style="font-size:12px;color:var(--text3);padding:4px 0">No steps yet — add one below</div>'}
-    <div class="add-subtask-row">
-      <input type="text" id="st-input-${t.id}" placeholder="Add a step..." onkeydown="if(event.key==='Enter')addSubtask(${t.id})" />
-      <button class="btn" style="font-size:11px;padding:5px 9px" onclick="addSubtask(${t.id})">Add</button>
-    </div>
-  </div>`;
-}
-
-function toggleSubtasks(id){
-  if(expandedTasks.has(id)) expandedTasks.delete(id);
-  else expandedTasks.add(id);
-  const t=TASKS.find(x=>x.id===id); if(!t)return;
-  const el=document.getElementById('ti-'+id);
-  if(el) el.outerHTML=taskHTML(t, currentUser.admin);
-}
-
-function toggleTask(id){
-  const t=TASKS.find(x=>x.id===id); if(!t||isBlocked(t))return;
-  t.done=!t.done;
-  if(t.done) createRecurringNext(t);
-  refreshTaskList();
-}
-
-function toggleSubtask(tid,si){
-  const t=TASKS.find(x=>x.id===tid); if(!t)return;
-  t.subtasks[si].done=!t.subtasks[si].done;
-  const el=document.getElementById('ti-'+tid);
-  if(el) el.outerHTML=taskHTML(t,currentUser.admin);
-}
-
-function addSubtask(tid){
-  const inp=document.getElementById('st-input-'+tid);
-  const text=inp?.value.trim(); if(!text)return;
-  const t=TASKS.find(x=>x.id===tid); if(!t)return;
-  t.subtasks.push({text,done:false});
-  expandedTasks.add(tid);
-  const el=document.getElementById('ti-'+tid);
-  if(el) el.outerHTML=taskHTML(t,currentUser.admin);
-}
-
-function deleteSubtask(tid,si){
-  const t=TASKS.find(x=>x.id===tid); if(!t)return;
-  t.subtasks.splice(si,1);
-  const el=document.getElementById('ti-'+tid);
-  if(el) el.outerHTML=taskHTML(t,currentUser.admin);
-}
-
-function deleteTask(id){
-  if(!confirm('Delete this task?'))return;
-  TASKS=TASKS.filter(t=>t.id!==id);
-  refreshTaskList();
-  toast('Task deleted');
-}
-
-function refreshTaskList(){
-  const listEl=document.getElementById('task-list')||document.getElementById('my-task-list');
-  if(listEl){
-    if(document.getElementById('task-list'))
-      document.getElementById('task-list').innerHTML=taskListHTML();
-    else
-      document.getElementById('my-task-list').innerHTML=myTaskListHTML();
-  }
-}
-
-// ════════════════════
-// VIEWS
-// ════════════════════
-function adminOverview(){
-  const open=TASKS.filter(t=>!t.done).length;
-  const pending=OFF_REQUESTS.filter(r=>r.status==='pending').length;
-  const online=TEAM.filter(t=>t.online).length;
-  const emailWarn=!EMAIL_ENABLED?`<div class="email-notice">⚠️ Email notifications are off — add your EmailJS keys at the top of the file to enable them.</div>`:'';
-  return `
-  <div class="page-title">Overview</div>
-  ${emailWarn}
-  <div class="metrics">
-    <div class="metric"><div class="ml">Open tasks</div><div class="mv">${open}</div><div class="ms">team-wide</div></div>
-    <div class="metric"><div class="ml">Team online</div><div class="mv">${online}<span style="font-size:14px;color:var(--text2)">/${TEAM.length}</span></div></div>
-    <div class="metric"><div class="ml">Time-off pending</div><div class="mv" style="color:var(--amber)">${pending}</div></div>
-    <div class="metric"><div class="ml">Revenue (May)</div><div class="mv" style="font-size:18px">$42k</div><div class="ms">+8%</div></div>
-  </div>
-  <div class="two-col">
-    <div class="card">
-      <div class="card-head"><div class="card-title">High priority</div><button class="btn primary" onclick="openNewTaskModal()">+ Task</button></div>
-      ${TASKS.filter(t=>t.pri==='high'&&!t.done).slice(0,4).map(t=>taskHTML(t,true)).join('')||empty('No high priority tasks 🎉')}
-    </div>
-    <div class="card">
-      <div class="card-head"><div class="card-title">Time-off requests</div></div>
-      ${OFF_REQUESTS.map((r,i)=>`
-        <div class="off-req">${avatar(r.name,26)}
-          <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500">${r.name}</div><div style="font-size:11px;color:var(--text2)">${fmtDate(r.from)}${r.to!==r.from?' – '+fmtDate(r.to):''} · ${r.reason}</div></div>
-          ${badge(r.status,r.status)}
-          ${r.status==='pending'?`<button class="btn primary" style="font-size:11px;padding:4px 8px" onclick="approveOff(${i})">Approve</button>`:''}
-        </div>`).join('')}
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-head"><div class="card-title">Latest updates</div></div>
-    ${ANNOUNCEMENTS.slice(0,2).map(a=>`<div class="announce"><div class="announce-title">${a.text}</div><div class="announce-meta">Posted by ${a.by} · ${a.time}</div></div>`).join('')}
-  </div>`;
-}
-
-function memberOverview(){
-  const mine=TASKS.filter(t=>t.assignee===currentUser.name&&!t.done);
-  return `
-  <div class="page-title">Hi, ${currentUser.name.split(' ')[0]} 👋</div>
-  <div class="metrics two">
-    <div class="metric"><div class="ml">My open tasks</div><div class="mv">${mine.length}</div></div>
-    <div class="metric"><div class="ml">High priority</div><div class="mv" style="color:var(--red)">${mine.filter(t=>t.pri==='high').length}</div></div>
-  </div>
-  <div class="card">
-    <div class="card-head"><div class="card-title">My tasks</div></div>
-    ${mine.length?mine.map(t=>taskHTML(t,false)).join(''):empty('All caught up! 🎉')}
-  </div>
-  <div class="card">
-    <div class="card-head"><div class="card-title">Team updates</div></div>
-    ${ANNOUNCEMENTS.map(a=>`<div class="announce"><div class="announce-title">${a.text}</div><div class="announce-meta">Posted by ${a.by} · ${a.time}</div></div>`).join('')}
-  </div>`;
-}
-
-function adminTasks(){
-  return `
-  <div class="page-title">All tasks</div>
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-    <div class="filter-row" style="margin-bottom:0">
-      <button class="filter-btn ${taskFilter==='all'?'active':''}"  onclick="setFilter('all',this)">All</button>
-      <button class="filter-btn ${taskFilter==='open'?'active':''}" onclick="setFilter('open',this)">Open</button>
-      <button class="filter-btn ${taskFilter==='high'?'active':''}" onclick="setFilter('high',this)">High priority</button>
-      <button class="filter-btn ${taskFilter==='recur'?'active':''}" onclick="setFilter('recur',this)">↻ Recurring</button>
-      <button class="filter-btn ${taskFilter==='blocked'?'active':''}" onclick="setFilter('blocked',this)">🔒 Blocked</button>
-      <button class="filter-btn ${taskFilter==='done'?'active':''}" onclick="setFilter('done',this)">Done</button>
-    </div>
-    <button class="btn primary" onclick="openNewTaskModal()">+ New task</button>
-  </div>
-  <div class="card">
-    <div id="task-list">${taskListHTML()}</div>
-  </div>`;
-}
-
-function taskListHTML(){
-  let list=TASKS;
-  if(taskFilter==='open')    list=TASKS.filter(t=>!t.done);
-  else if(taskFilter==='high')    list=TASKS.filter(t=>t.pri==='high'&&!t.done);
-  else if(taskFilter==='recur')   list=TASKS.filter(t=>t.recur&&t.recur!=='none');
-  else if(taskFilter==='blocked') list=TASKS.filter(t=>isBlocked(t));
-  else if(taskFilter==='done')    list=TASKS.filter(t=>t.done);
-  if(!list.length) return empty('No tasks here');
-  return list.map(t=>taskHTML(t,true)).join('');
-}
-
-function setFilter(f,btn){
-  taskFilter=f;
-  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('task-list').innerHTML=taskListHTML();
-}
-
-function memberTasks(){
-  return `
-  <div class="page-title">My tasks</div>
-  <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
-    <button class="btn primary" onclick="openNewTaskModal('${currentUser.name}')">+ Add task</button>
-  </div>
-  <div class="card">
-    <div id="my-task-list">${myTaskListHTML()}</div>
-  </div>`;
-}
-function myTaskListHTML(){
-  const mine=TASKS.filter(t=>t.assignee===currentUser.name);
-  if(!mine.length) return empty('No tasks yet 🎉');
-  return mine.map(t=>taskHTML(t,false)).join('');
-}
-
-// ── BOARDS ──
-function renderBoards(){
-  const TC={content:'tag-content',link:'tag-link',idea:'tag-idea',sop:'tag-sop'};
-  const TL={content:'Content',link:'Link',idea:'Idea',sop:'SOP'};
-  return `
-  <div class="page-title">Boards</div>
-  <div class="board-cols">
-    ${Object.entries(BOARDS).map(([col,cards],ci)=>`
-      <div class="board-col">
-        <div class="board-col-title">${col}<span class="board-count">${cards.length}</span></div>
-        <div id="bcol-${ci}">${cards.map(c=>`<div class="board-card"><div class="board-card-title">${c.title}</div><span class="board-tag ${TC[c.tag]}">${TL[c.tag]}</span></div>`).join('')}</div>
-        <button class="add-card-btn" onclick="toggleAddCard(${ci})">+ Add card</button>
-        <div id="ac-${ci}" style="display:none">
-          <div class="add-card-row">
-            <input type="text" id="ci-${ci}" placeholder="Card title..." onkeydown="if(event.key==='Enter')addCard(${ci},'${col}')" />
-            <button class="btn primary" style="font-size:11px;padding:5px 10px" onclick="addCard(${ci},'${col}')">Add</button>
-          </div>
-        </div>
-      </div>`).join('')}
-  </div>`;
-}
-function toggleAddCard(ci){ const el=document.getElementById('ac-'+ci); el.style.display=el.style.display==='none'?'block':'none'; }
-function addCard(ci,col){
-  const inp=document.getElementById('ci-'+ci); const title=inp.value.trim(); if(!title)return;
-  BOARDS[col].push({title,tag:'idea'});
-  const TC={content:'tag-content',link:'tag-link',idea:'tag-idea',sop:'tag-sop'};
-  const TL={content:'Content',link:'Link',idea:'Idea',sop:'SOP'};
-  document.getElementById('bcol-'+ci).innerHTML=BOARDS[col].map(c=>`<div class="board-card"><div class="board-card-title">${c.title}</div><span class="board-tag ${TC[c.tag]}">${TL[c.tag]}</span></div>`).join('');
-  inp.value='';
-}
-
-// ── TEAM ──
-function renderTeam(){
-  return `
-  <div class="page-title">Team (${TEAM.length})</div>
-  <div class="card">
-    ${TEAM.map(m=>`
-      <div class="team-row">
-        <div class="avatar" style="width:32px;height:32px;font-size:12px;background:${m.color};color:${m.tc}">${m.init}</div>
-        <div style="flex:1"><div style="font-size:13px;font-weight:500">${m.name}</div><div style="font-size:11px;color:var(--text2)">${m.role}</div></div>
-        ${m.admin?badge('info','Admin'):''}
-        <span class="status-pill ${m.online?'online-p':'away-p'}">${m.online?'● Online':'○ Away'}</span>
-        <span style="font-size:12px;color:var(--text2);min-width:60px;text-align:right">${TASKS.filter(t=>t.assignee===m.name&&!t.done).length} open</span>
-      </div>`).join('')}
-  </div>`;
-}
-
-// ── TIME OFF ──
-function adminTimeOff(){
-  return `
-  <div class="page-title">Time off</div>
-  <div class="card">
-    <div class="card-head"><div class="card-title">All requests</div></div>
-    ${OFF_REQUESTS.map((r,i)=>`
-      <div class="off-req">${avatar(r.name,28)}
-        <div style="flex:1"><div style="font-size:13px;font-weight:500">${r.name}</div><div style="font-size:11px;color:var(--text2)">${fmtDate(r.from)}${r.to!==r.from?' – '+fmtDate(r.to):''} · ${r.reason}</div></div>
-        ${badge(r.status,r.status)}
-        ${r.status==='pending'?`
-          <button class="btn primary" style="font-size:11px;padding:4px 8px" onclick="approveOff(${i})">Approve</button>
-          <button class="btn danger" style="font-size:11px;padding:4px 8px" onclick="denyOff(${i})">Deny</button>
-        `:''}
-      </div>`).join('')||empty('No requests')}
-  </div>`;
-}
-function approveOff(i){ OFF_REQUESTS[i].status='approved'; notifyApproval(OFF_REQUESTS[i],true); toast('Approved & notified'); go('timeoff'); }
-function denyOff(i){ OFF_REQUESTS[i].status='denied'; notifyApproval(OFF_REQUESTS[i],false); toast('Denied & notified'); go('timeoff'); }
-
-function memberTimeOff(){
-  const mine=OFF_REQUESTS.filter(r=>r.name===currentUser.name);
-  return `
-  <div class="page-title">Request time off</div>
-  <div class="card">
-    <div class="card-head"><div class="card-title">My requests</div></div>
-    ${mine.length?mine.map(r=>`
-      <div class="off-req">
-        <div style="flex:1"><div style="font-size:13px;font-weight:500">${fmtDate(r.from)}${r.to!==r.from?' – '+fmtDate(r.to):''}</div><div style="font-size:11px;color:var(--text2)">${r.reason}</div></div>
-        ${badge(r.status,r.status)}
-      </div>`).join(''):empty('No requests yet')}
-  </div>
-  <div class="card">
-    <div class="card-head"><div class="card-title">New request</div></div>
-    <div class="date-inputs">
-      <div><label>From</label><input type="date" id="off-from" /></div>
-      <div><label>To</label><input type="date" id="off-to" /></div>
-    </div>
-    <div class="add-row" style="margin-top:0">
-      <input type="text" id="off-reason" placeholder="Reason (optional)" />
-      <button class="btn primary" onclick="submitOff()">Submit request</button>
-    </div>
-  </div>`;
-}
-function submitOff(){
-  const from=document.getElementById('off-from').value; if(!from){alert('Pick a date.');return;}
-  const to=document.getElementById('off-to').value||from;
-  const reason=document.getElementById('off-reason').value||'Personal';
-  OFF_REQUESTS.push({name:currentUser.name,from,to,reason,status:'pending'});
-  toast('Request submitted — admin will review');
-  go('timeoff');
-}
-
-// ── GOALS ──
-function renderGoals(){
-  const SM={track:{cls:'g',label:'On track',c:'var(--green)'},risk:{cls:'a',label:'At risk',c:'var(--amber)'},behind:{cls:'r',label:'Behind',c:'var(--red)'}};
-  return `
-  <div class="page-title">Goals — Q2 2026</div>
-  <div class="metrics">
-    <div class="metric"><div class="ml">Total</div><div class="mv">${GOALS.length}</div></div>
-    <div class="metric"><div class="ml">On track</div><div class="mv" style="color:var(--green)">${GOALS.filter(g=>g.status==='track').length}</div></div>
-    <div class="metric"><div class="ml">At risk</div><div class="mv" style="color:var(--amber)">${GOALS.filter(g=>g.status==='risk').length}</div></div>
-    <div class="metric"><div class="ml">Behind</div><div class="mv" style="color:var(--red)">${GOALS.filter(g=>g.status==='behind').length}</div></div>
-  </div>
-  <div class="card">
-    ${GOALS.map(g=>{const s=SM[g.status];return`
-      <div class="goal-row">
-        <div style="flex:1.2;min-width:0"><div style="font-size:13px;font-weight:500">${g.name}</div><div style="font-size:11px;color:var(--text2)">${g.cat} · ${g.owner}</div></div>
-        <div style="flex:1.5"><div class="track"><div class="fill ${s.cls}" style="width:${g.pct}%"></div></div></div>
-        <div style="font-size:12px;font-weight:600;color:var(--text2);min-width:32px;text-align:right">${g.pct}%</div>
-        <span style="font-size:10px;padding:2px 7px;border-radius:5px;font-weight:600;color:${s.c};background:${s.c}18">${s.label}</span>
-      </div>`;}).join('')}
-  </div>`;
-}
-
-// ── PAYROLL ──
-function renderPayroll(){
-  const total=PAYROLL.reduce((s,p)=>s+parseInt(p.salary.replace(/\D/g,''),10),0);
-  return `
-  <div class="page-title">Payroll — May 2026</div>
-  <div class="metrics">
-    <div class="metric"><div class="ml">Total payroll</div><div class="mv" style="font-size:18px">$${(total/1000).toFixed(1)}k</div></div>
-    <div class="metric"><div class="ml">Paid</div><div class="mv" style="color:var(--green)">${PAYROLL.filter(p=>p.status==='paid').length}</div></div>
-    <div class="metric"><div class="ml">Pending</div><div class="mv" style="color:var(--amber)">${PAYROLL.filter(p=>p.status==='pending').length}</div></div>
-    <div class="metric"><div class="ml">Next pay date</div><div class="mv" style="font-size:16px">May 15</div></div>
-  </div>
-  <div class="card">
-    ${PAYROLL.map(p=>`
-      <div class="pay-row">${avatar(p.name,28)}
-        <div style="flex:1"><div style="font-size:13px;font-weight:500">${p.name}</div><div style="font-size:11px;color:var(--text2)">${p.role}</div></div>
-        <span style="font-size:13px;font-weight:600;min-width:60px;text-align:right">${p.salary}</span>
-        ${badge(p.status==='paid'?'approved':'pending',p.status)}
-      </div>`).join('')}
-  </div>`;
-}
-
-// ── SALES ──
-function renderSales(){
-  const reps=[["Maria G.","$14,200","+12%",true],["Carlos R.","$11,800","+6%",true],["Sofia M.","$9,400","-2%",false],["Rosa V.","$6,600","+18%",true],["Pedro S.","$5,800","+4%",true]];
-  return `
-  <div class="page-title">Sales — May 2026</div>
-  <div class="metrics">
-    <div class="metric"><div class="ml">Revenue</div><div class="mv" style="font-size:18px">$42k</div><div class="ms">+8%</div></div>
-    <div class="metric"><div class="ml">New clients</div><div class="mv">7</div></div>
-    <div class="metric"><div class="ml">Deals closed</div><div class="mv">12</div></div>
-    <div class="metric"><div class="ml">Pipeline</div><div class="mv" style="font-size:18px">$91k</div></div>
-  </div>
-  <div class="two-col">
-    <div class="card">
-      <div class="card-head"><div class="card-title">By rep</div></div>
-      ${reps.map(([n,v,c,up])=>`<div class="sales-row">${avatar(n,26)}<span style="flex:1;font-size:13px;font-weight:500">${n}</span><span style="font-size:13px;font-weight:600">${v}</span><span class="${up?'up':'dn'}" style="margin-left:6px">${c}</span></div>`).join('')}
-    </div>
-    <div class="card">
-      <div class="card-head"><div class="card-title">By channel</div></div>
-      ${[["GHL / CRM","$22,100",53],["Referral","$11,300",27],["Inbound","$5,800",14],["Other","$2,800",6]].map(([n,v,w])=>`
-        <div class="sales-row"><span style="flex:1;font-size:13px;font-weight:500">${n}</span><div style="flex:1;padding:0 10px"><div class="track"><div class="fill g" style="width:${w}%"></div></div></div><span style="font-size:12px;font-weight:600;color:var(--text2);min-width:56px;text-align:right">${v}</span></div>`).join('')}
-    </div>
-  </div>`;
-}
-
-// ── UPDATES ──
-function renderUpdates(){
-  return `
-  <div class="page-title">Updates</div>
-  <div class="card">
-    <div class="card-head"><div class="card-title">Announcements</div></div>
-    <div id="ann-list">${ANNOUNCEMENTS.map(a=>`<div class="announce"><div class="announce-title">${a.text}</div><div class="announce-meta">Posted by ${a.by} · ${a.time}</div></div>`).join('')}</div>
-    ${currentUser.admin?`
-    <div class="add-row" style="margin-top:12px">
-      <input type="text" id="ann-text" placeholder="Post an update to the whole team..." />
-      <button class="btn primary" onclick="postAnnouncement()">Post</button>
-    </div>`:''}
-  </div>`;
-}
-function postAnnouncement(){
-  const inp=document.getElementById('ann-text'); if(!inp.value.trim())return;
-  ANNOUNCEMENTS.unshift({text:inp.value.trim(),by:currentUser.name,time:'just now'});
-  inp.value='';
-  document.getElementById('ann-list').innerHTML=ANNOUNCEMENTS.map(a=>`<div class="announce"><div class="announce-title">${a.text}</div><div class="announce-meta">Posted by ${a.by} · ${a.time}</div></div>`).join('');
-}
-
-// ── LINKS ──
-function renderLinks(){
-  return `
-  <div class="page-title">Quick links</div>
-  <div class="card">
-    <div class="links-grid">
-      ${LINKS.map(l=>`<a class="link-card" href="${l.url}" target="_blank" rel="noopener"><div class="link-icon">${l.icon}</div><div class="link-name">${l.name}</div><div class="link-desc">${l.desc}</div></a>`).join('')}
-    </div>
-  </div>`;
-}
-
-// INIT
-renderLogin();
+});
 </script>
 </body>
 </html>
